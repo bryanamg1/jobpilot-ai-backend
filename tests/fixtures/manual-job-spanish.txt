@@ -1,0 +1,9 @@
+Backend Developer - Remote at Acme Labs
+Empresa: Acme Labs
+Ubicacion: Remoto LATAM
+Salario: USD 1200 - 1600
+
+Estamos buscando un Backend Developer Jr con Node.js, Express, MySQL y Docker.
+- Requisito: experiencia con JavaScript y APIs REST
+- Requisito: ingles B1 o mejor
+- Enviar CV a jobs@acmelabs.com

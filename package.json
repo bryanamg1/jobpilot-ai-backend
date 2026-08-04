@@ -1,0 +1,51 @@
+{
+  "name": "jobpilot-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "vitest run --pool threads",
+    "test:watch": "vitest --pool threads",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "check": "npm run lint && npm run test",
+    "db:migrate": "node scripts/migrate.js",
+    "db:status": "node scripts/dbStatus.js"
+  },
+  "keywords": [
+    "jobpilot",
+    "express",
+    "matching-engine"
+  ],
+  "author": "Bryan Marquez",
+  "license": "ISC",
+  "description": "JobPilot AI backend",
+  "dependencies": {
+    "bullmq": "^6.0.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "googleapis": "^174.0.0",
+    "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
+    "mysql2": "^3.23.2",
+    "openai": "^7.4.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "playwright": "^1.62.1",
+    "uuid": "^14.0.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.0",
+    "globals": "^17.9.0",
+    "prettier": "^3.9.6",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.10"
+  }
+}
