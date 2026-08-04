@@ -4,12 +4,14 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
 import { getInMemoryRuntime } from '../../src/repositories/inMemory/inMemoryRuntime.js';
+import { resetRepositoryForTests } from '../../src/repositories/repositoryFactory.js';
 
 const fixture = (name) =>
   fs.readFileSync(path.join(import.meta.dirname, '../fixtures', name), 'utf8');
 
 describe('jobs routes', () => {
   beforeEach(() => {
+    resetRepositoryForTests();
     const runtime = getInMemoryRuntime();
     runtime.offers = [];
     runtime.audits = [];

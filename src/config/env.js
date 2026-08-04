@@ -1,13 +1,14 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4300),
   LOG_LEVEL: z.string().default('info'),
   FRONTEND_ORIGIN: z.string().default('http://localhost:5173'),
+  STORAGE_MODE: z.enum(['auto', 'memory', 'mysql']).default('auto'),
   MYSQL_HOST: z.string().optional(),
   MYSQL_PORT: z.coerce.number().default(3306),
   MYSQL_DATABASE: z.string().optional(),

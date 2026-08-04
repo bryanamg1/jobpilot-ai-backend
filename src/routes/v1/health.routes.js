@@ -1,15 +1,16 @@
 import { Router } from 'express';
+import { asyncHandler } from '../../lib/asyncHandler.js';
 
-export function createHealthRouter({ repository }) {
+export function createHealthRouter({ healthService }) {
   const router = Router();
 
-  router.get('/', (_req, res) => {
-    res.json({
-      status: 'ok',
-      storageMode: repository.mode,
-      timestamp: new Date().toISOString(),
-    });
-  });
+  router.get(
+    '/',
+    asyncHandler(async (_req, res) => {
+      const status = await healthService.getStatus();
+      res.json(status);
+    }),
+  );
 
   return router;
 }

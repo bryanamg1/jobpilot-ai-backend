@@ -44,5 +44,11 @@ export function createMemoryRepository() {
         latest: offers.slice(0, 10),
       };
     },
+    async ping() {
+      return {
+        status: 'ok',
+        mode: this.mode,
+      };
+    },
   };
 }

@@ -155,5 +155,12 @@ export function createMysqlRepository() {
         latest: latest.slice(0, 10),
       };
     },
+    async ping() {
+      const [rows] = await pool.query('SELECT 1 AS ok');
+      return {
+        status: rows[0]?.ok === 1 ? 'ok' : 'error',
+        mode: this.mode,
+      };
+    },
   };
 }

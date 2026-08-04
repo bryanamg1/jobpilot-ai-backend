@@ -4,6 +4,10 @@ import { env } from '../../config/env.js';
 let pool;
 
 export function getMysqlPool() {
+  if (!env.mysqlConfigured) {
+    throw new Error('MySQL is not configured.');
+  }
+
   if (!pool) {
     pool = mysql.createPool({
       host: env.MYSQL_HOST,
@@ -12,7 +16,9 @@ export function getMysqlPool() {
       user: env.MYSQL_USER,
       password: env.MYSQL_PASSWORD,
       ssl: env.MYSQL_SSL === 'true' ? {} : undefined,
-      connectionLimit: 5,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
     });
   }
 

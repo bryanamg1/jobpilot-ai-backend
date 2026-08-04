@@ -10,6 +10,7 @@ import { requestContext } from './middleware/requestContext.js';
 import { getRepository } from './repositories/repositoryFactory.js';
 import { createAuditService } from './services/audit/auditService.js';
 import { createDashboardService } from './services/dashboard/dashboardService.js';
+import { createHealthService } from './services/health/healthService.js';
 import { createJobOfferService } from './services/jobs/jobOfferService.js';
 import { createProfileService } from './services/profile/profileService.js';
 import { createDashboardRouter } from './routes/v1/dashboard.routes.js';
@@ -23,6 +24,7 @@ export function buildApp() {
   const auditService = createAuditService(repository);
   const jobOfferService = createJobOfferService(repository, auditService);
   const dashboardService = createDashboardService(repository);
+  const healthService = createHealthService(repository);
   const profileService = createProfileService(repository);
 
   const app = express();
@@ -43,7 +45,7 @@ export function buildApp() {
   );
   app.use(express.json({ limit: '1mb' }));
 
-  app.use('/api/v1/health', createHealthRouter({ repository }));
+  app.use('/api/v1/health', createHealthRouter({ healthService }));
   app.use('/api/v1/profile', createProfileRouter({ profileService }));
   app.use('/api/v1/jobs', createJobsRouter({ jobOfferService }));
   app.use('/api/v1/dashboard', createDashboardRouter({ dashboardService }));

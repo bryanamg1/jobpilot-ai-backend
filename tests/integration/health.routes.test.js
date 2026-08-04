@@ -1,0 +1,20 @@
+import request from 'supertest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { buildApp } from '../../src/app.js';
+import { resetRepositoryForTests } from '../../src/repositories/repositoryFactory.js';
+
+describe('health routes', () => {
+  beforeEach(() => {
+    resetRepositoryForTests();
+  });
+
+  it('reports storage health without touching external dependencies in test mode', async () => {
+    const app = buildApp();
+    const response = await request(app).get('/api/v1/health');
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('ok');
+    expect(response.body.storageMode).toBe('memory');
+    expect(response.body.dependencies.storage.status).toBe('ok');
+  });
+});
