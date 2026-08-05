@@ -123,4 +123,92 @@ describe('gmailIntegrationService', () => {
     expect(saveEmailDraft).toHaveBeenCalledTimes(1);
     expect(recordAudit).toHaveBeenCalledWith('gmail.draft_created', 'job_offer', 'job-1', expect.any(Object));
   });
+
+  it('blocks draft creation when there are unresolved sensitive approval requests', async () => {
+    const service = createGmailIntegrationService(
+      {
+        async saveEmailDraft(record) {
+          return record;
+        },
+      },
+      {
+        async record() {
+          return {};
+        },
+      },
+      {
+        async createPreview() {
+          return {
+            jobId: 'job-2',
+            jobTitle: 'Backend Developer',
+            company: 'Acme Labs',
+            sourceUrl: 'https://example.com/job-2',
+            matchStatus: 'AWAITING_APPROVAL',
+            score: 78,
+            status: 'REVIEW_REQUIRED',
+            recipient: 'jobs@acmelabs.com',
+            subject: 'Application for Backend Developer - Bryan Marquez',
+            body: 'Hello,\n\nI am interested in the Backend Developer role.\n\nBest regards,\nBryan Marquez',
+            generation: { mode: 'deterministic', warnings: [] },
+            blockedReasons: [],
+            approvalsRequired: ['salary: requires approval'],
+            pendingApprovalRequests: [
+              {
+                id: 'approval-1',
+                approvalKind: 'salaryExpectation',
+                status: 'PENDING',
+              },
+            ],
+            rejectedApprovalRequests: [],
+            approvalRequests: [
+              {
+                id: 'approval-1',
+                approvalKind: 'salaryExpectation',
+                status: 'PENDING',
+              },
+            ],
+          };
+        },
+      },
+      {
+        config: {
+          GOOGLE_CLIENT_ID: 'client-id',
+          GOOGLE_CLIENT_SECRET: 'client-secret',
+          GOOGLE_REDIRECT_URI: 'http://localhost:4300/api/v1/integrations/gmail/callback',
+          GOOGLE_GMAIL_LABEL: 'Postulaciones/Por revisar',
+          GOOGLE_GMAIL_ALERT_QUERY: 'job alert',
+          GOOGLE_GMAIL_MAX_RESULTS: 10,
+          GOOGLE_TOKEN_PATH: 'storage/tokens/test.json.enc',
+          ENCRYPTION_KEY: 'a'.repeat(64),
+        },
+        tokenStore: {
+          async read() {
+            return {
+              tokens: { access_token: 'token' },
+              emailAddress: 'bryanamg181@gmail.com',
+              labelId: 'Label_1',
+              labelName: 'Postulaciones/Por revisar',
+            };
+          },
+          async write() {},
+          async delete() {},
+        },
+        oauthClientFactory: () => ({
+          setCredentials() {},
+        }),
+        gmailApiFactory: () => ({
+          users: {
+            drafts: {
+              create: vi.fn(),
+            },
+          },
+        }),
+      },
+    );
+
+    await expect(service.createDraftFromJob('job-2')).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'Sensitive approval requests must be resolved before creating the Gmail draft',
+    });
+  });
 });

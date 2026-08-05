@@ -15,6 +15,21 @@ export const openApiDocument = {
         },
       },
     },
+    '/api/v1/approvals': {
+      get: {
+        summary: 'List sensitive approval requests for manual review',
+      },
+    },
+    '/api/v1/approvals/{requestId}/approve': {
+      post: {
+        summary: 'Approve a sensitive approval request',
+      },
+    },
+    '/api/v1/approvals/{requestId}/reject': {
+      post: {
+        summary: 'Reject a sensitive approval request',
+      },
+    },
     '/api/v1/answers': {
       get: {
         summary: 'List reusable answer-library entries',

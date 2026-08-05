@@ -85,6 +85,110 @@ export function createMysqlRepository() {
 
       return record;
     },
+    async listApprovalRequests() {
+      const [rows] = await pool.query(
+        `
+          SELECT id, entity_type, entity_id, approval_kind, status, payload_json, created_at, updated_at
+          FROM approval_requests
+          ORDER BY
+            CASE status
+              WHEN 'PENDING' THEN 0
+              WHEN 'REJECTED' THEN 1
+              ELSE 2
+            END,
+            updated_at DESC,
+            created_at DESC
+          LIMIT 200
+        `,
+      );
+
+      return rows.map(mapApprovalRequestRow);
+    },
+    async listApprovalRequestsByEntity(entityType, entityId) {
+      const [rows] = await pool.query(
+        `
+          SELECT id, entity_type, entity_id, approval_kind, status, payload_json, created_at, updated_at
+          FROM approval_requests
+          WHERE entity_type = ? AND entity_id = ?
+          ORDER BY
+            CASE status
+              WHEN 'PENDING' THEN 0
+              WHEN 'REJECTED' THEN 1
+              ELSE 2
+            END,
+            updated_at DESC,
+            created_at DESC
+        `,
+        [entityType, entityId],
+      );
+
+      return rows.map(mapApprovalRequestRow);
+    },
+    async findApprovalRequest(entityType, entityId, approvalKind) {
+      const [rows] = await pool.query(
+        `
+          SELECT id, entity_type, entity_id, approval_kind, status, payload_json, created_at, updated_at
+          FROM approval_requests
+          WHERE entity_type = ? AND entity_id = ? AND approval_kind = ?
+          ORDER BY updated_at DESC
+          LIMIT 1
+        `,
+        [entityType, entityId, approvalKind],
+      );
+
+      return rows[0] ? mapApprovalRequestRow(rows[0]) : null;
+    },
+    async getApprovalRequestById(requestId) {
+      const [rows] = await pool.query(
+        `
+          SELECT id, entity_type, entity_id, approval_kind, status, payload_json, created_at, updated_at
+          FROM approval_requests
+          WHERE id = ?
+          LIMIT 1
+        `,
+        [requestId],
+      );
+
+      return rows[0] ? mapApprovalRequestRow(rows[0]) : null;
+    },
+    async saveApprovalRequest(record) {
+      await pool.query(
+        `
+          INSERT INTO approval_requests (
+            id,
+            entity_type,
+            entity_id,
+            approval_kind,
+            status,
+            payload_json,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+        `,
+        [
+          record.id,
+          record.entityType,
+          record.entityId,
+          record.approvalKind,
+          record.status,
+          JSON.stringify(record.payload),
+        ],
+      );
+
+      return record;
+    },
+    async updateApprovalRequest(record) {
+      await pool.query(
+        `
+          UPDATE approval_requests
+          SET status = ?, payload_json = ?, updated_at = NOW()
+          WHERE id = ?
+        `,
+        [record.status, JSON.stringify(record.payload), record.id],
+      );
+
+      return record;
+    },
     async listJobAnalyses() {
       const [rows] = await pool.query(
         'SELECT payload_json FROM job_offers WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100',
@@ -431,6 +535,19 @@ function mapResumeRow(row) {
     label: row.label,
     filePath: row.file_path,
     metadata: parseStoredJson(row.metadata_json),
+    createdAt: serializeDate(row.created_at),
+    updatedAt: serializeDate(row.updated_at),
+  };
+}
+
+function mapApprovalRequestRow(row) {
+  return {
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    approvalKind: row.approval_kind,
+    status: row.status,
+    payload: parseStoredJson(row.payload_json),
     createdAt: serializeDate(row.created_at),
     updatedAt: serializeDate(row.updated_at),
   };
