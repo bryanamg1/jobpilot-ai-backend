@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../../lib/asyncHandler.js';
 import { jobDraftPreviewParamsSchema, manualJobInputSchema } from '../../schemas/jobSchemas.js';
 
-export function createJobsRouter({ jobOfferService, jobDraftService }) {
+export function createJobsRouter({ jobOfferService, jobDraftService, gmailIntegrationService }) {
   const router = Router();
 
   router.get(
@@ -28,6 +28,15 @@ export function createJobsRouter({ jobOfferService, jobDraftService }) {
       const params = jobDraftPreviewParamsSchema.parse(req.params);
       const preview = await jobDraftService.createPreview(params.jobId);
       res.json({ data: preview });
+    }),
+  );
+
+  router.post(
+    '/:jobId/gmail-draft',
+    asyncHandler(async (req, res) => {
+      const params = jobDraftPreviewParamsSchema.parse(req.params);
+      const payload = await gmailIntegrationService.createDraftFromJob(params.jobId);
+      res.status(201).json({ data: payload });
     }),
   );
 

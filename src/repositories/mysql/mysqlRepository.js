@@ -126,6 +126,36 @@ export function createMysqlRepository() {
 
       return record;
     },
+    async saveEmailDraft(record) {
+      await pool.query(
+        `
+          INSERT INTO email_drafts (
+            id,
+            application_id,
+            provider,
+            draft_external_id,
+            to_email,
+            subject_line,
+            body_text,
+            metadata_json,
+            created_at,
+            updated_at,
+            deleted_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NULL)
+        `,
+        [
+          record.id,
+          record.applicationId,
+          record.provider,
+          record.draftExternalId,
+          record.toEmail,
+          record.subjectLine,
+          record.bodyText,
+          JSON.stringify(record.metadata),
+        ],
+      );
+      return record;
+    },
     async saveAuditEvent(event) {
       await pool.query(
         `

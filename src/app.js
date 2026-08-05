@@ -10,6 +10,7 @@ import { requestContext } from './middleware/requestContext.js';
 import { getRepository } from './repositories/repositoryFactory.js';
 import { createAuditService } from './services/audit/auditService.js';
 import { createDashboardService } from './services/dashboard/dashboardService.js';
+import { createGmailIntegrationService } from './services/gmail/gmailIntegrationService.js';
 import { createHealthService } from './services/health/healthService.js';
 import { createJobDraftService } from './services/jobs/jobDraftService.js';
 import { createJobOfferService } from './services/jobs/jobOfferService.js';
@@ -19,6 +20,7 @@ import { createProfileService } from './services/profile/profileService.js';
 import { createDashboardRouter } from './routes/v1/dashboard.routes.js';
 import { createDocsRouter } from './routes/v1/docs.routes.js';
 import { createHealthRouter } from './routes/v1/health.routes.js';
+import { createIntegrationsRouter } from './routes/v1/integrations.routes.js';
 import { createJobsRouter } from './routes/v1/jobs.routes.js';
 import { createProfileRouter } from './routes/v1/profile.routes.js';
 
@@ -39,6 +41,9 @@ export function buildApp(options = {}) {
     createJobDraftService(repository, auditService, {
       openAiDraftService,
     });
+  const gmailIntegrationService =
+    options.gmailIntegrationService ??
+    createGmailIntegrationService(repository, auditService, jobDraftService);
   const dashboardService = options.dashboardService ?? createDashboardService(repository);
   const healthService = options.healthService ?? createHealthService(repository);
   const profileService = options.profileService ?? createProfileService(repository, auditService);
@@ -63,7 +68,8 @@ export function buildApp(options = {}) {
 
   app.use('/api/v1/health', createHealthRouter({ healthService }));
   app.use('/api/v1/profile', createProfileRouter({ profileService }));
-  app.use('/api/v1/jobs', createJobsRouter({ jobOfferService, jobDraftService }));
+  app.use('/api/v1/jobs', createJobsRouter({ jobOfferService, jobDraftService, gmailIntegrationService }));
+  app.use('/api/v1/integrations', createIntegrationsRouter({ gmailIntegrationService }));
   app.use('/api/v1/dashboard', createDashboardRouter({ dashboardService }));
   app.use('/api/v1/docs', createDocsRouter());
 

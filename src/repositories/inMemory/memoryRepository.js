@@ -25,6 +25,10 @@ export function createMemoryRepository() {
       runtime.offers.push(record);
       return record;
     },
+    async saveEmailDraft(record) {
+      runtime.emailDrafts.push(record);
+      return record;
+    },
     async saveAuditEvent(event) {
       runtime.audits.push(event);
       return event;

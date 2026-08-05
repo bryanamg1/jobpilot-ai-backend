@@ -26,6 +26,11 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_REDIRECT_URI: z.string().optional(),
   GOOGLE_GMAIL_LABEL: z.string().default('Postulaciones/Por revisar'),
+  GOOGLE_TOKEN_PATH: z.string().default('storage/tokens/gmail-oauth.json.enc'),
+  GOOGLE_GMAIL_ALERT_QUERY: z
+    .string()
+    .default('("linkedin" OR "job alert" OR "hiring" OR "vacante" OR "oportunidad laboral") newer_than:30d'),
+  GOOGLE_GMAIL_MAX_RESULTS: z.coerce.number().default(10),
   ENCRYPTION_KEY: z.string().optional(),
 });
 
