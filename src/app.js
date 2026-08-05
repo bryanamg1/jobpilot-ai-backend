@@ -8,7 +8,9 @@ import { logger } from './config/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { requestContext } from './middleware/requestContext.js';
 import { getRepository } from './repositories/repositoryFactory.js';
+import { createAnswersRouter } from './routes/v1/answers.routes.js';
 import { createAuditService } from './services/audit/auditService.js';
+import { createAnswerLibraryService } from './services/answers/answerLibraryService.js';
 import { createDashboardService } from './services/dashboard/dashboardService.js';
 import { createGmailIntegrationService } from './services/gmail/gmailIntegrationService.js';
 import { createHealthService } from './services/health/healthService.js';
@@ -31,6 +33,7 @@ import { asyncHandler } from './lib/asyncHandler.js';
 export function buildApp(options = {}) {
   const repository = options.repository ?? getRepository();
   const auditService = options.auditService ?? createAuditService(repository);
+  const answerLibraryService = options.answerLibraryService ?? createAnswerLibraryService(repository, auditService);
   const openAiEnrichmentService =
     options.openAiEnrichmentService ?? createOpenAiEnrichmentService();
   const openAiDraftService =
@@ -44,6 +47,7 @@ export function buildApp(options = {}) {
     options.jobDraftService ??
     createJobDraftService(repository, auditService, {
       openAiDraftService,
+      answerLibraryService,
     });
   const jobApprovalService =
     options.jobApprovalService ?? createJobApprovalService(repository, auditService);
@@ -114,6 +118,7 @@ export function buildApp(options = {}) {
   app.use(express.json({ limit: '8mb' }));
 
   app.use('/api/v1/health', createHealthRouter({ healthService }));
+  app.use('/api/v1/answers', createAnswersRouter({ answerLibraryService }));
   app.use('/api/v1/profile', createProfileRouter({ profileService }));
   app.use(
     '/api/v1/jobs',

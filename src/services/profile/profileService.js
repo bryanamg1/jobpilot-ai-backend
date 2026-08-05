@@ -11,6 +11,7 @@ export function createProfileService(repository, auditService) {
         id: currentProfile.id,
         source: 'candidate_profile_update',
       });
+      profile.answerLibrary = structuredClone(currentProfile.answerLibrary ?? []);
       const updatedProfile = await repository.updateCandidateProfile(profile);
 
       await auditService.record(

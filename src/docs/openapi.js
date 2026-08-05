@@ -15,6 +15,22 @@ export const openApiDocument = {
         },
       },
     },
+    '/api/v1/answers': {
+      get: {
+        summary: 'List reusable answer-library entries',
+      },
+      post: {
+        summary: 'Create a reusable answer-library entry',
+      },
+    },
+    '/api/v1/answers/{answerId}': {
+      put: {
+        summary: 'Update a reusable answer-library entry',
+      },
+      delete: {
+        summary: 'Delete a reusable answer-library entry',
+      },
+    },
     '/api/v1/jobs/manual': {
       post: {
         summary: 'Create a manual job offer analysis',

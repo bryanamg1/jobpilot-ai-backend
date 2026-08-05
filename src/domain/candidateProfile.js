@@ -65,6 +65,63 @@ export const defaultCandidateProfileInput = {
     'Terraform experience',
     'Unverified years of experience',
   ],
+  answerLibrary: [
+    {
+      id: 'answer-location-buenos-aires',
+      kind: 'location',
+      question: 'What is your current location?',
+      answer: 'Bryan Marquez is based in Buenos Aires, Argentina.',
+      certainty: CERTAINTY.CONFIRMED,
+      source: 'candidate_profile_seed',
+      tags: ['location', 'argentina', 'remote'],
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:00.000Z',
+    },
+    {
+      id: 'answer-availability-full-time',
+      kind: 'availability',
+      question: 'What is your current availability?',
+      answer: 'Bryan Marquez is available for full-time opportunities.',
+      certainty: CERTAINTY.CONFIRMED,
+      source: 'candidate_profile_seed',
+      tags: ['availability', 'full-time', 'schedule'],
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:00.000Z',
+    },
+    {
+      id: 'answer-english-b1',
+      kind: 'englishLevel',
+      question: 'What is your English level?',
+      answer: 'Confirmed English level: B1.',
+      certainty: CERTAINTY.REQUIRES_APPROVAL,
+      source: 'candidate_profile_seed',
+      tags: ['english', 'language', 'b1'],
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:00.000Z',
+    },
+    {
+      id: 'answer-salary-usd-1000',
+      kind: 'salaryExpectation',
+      question: 'What are your salary expectations?',
+      answer: 'Initial salary expectation: USD 1000 monthly.',
+      certainty: CERTAINTY.REQUIRES_APPROVAL,
+      source: 'candidate_profile_seed',
+      tags: ['salary', 'compensation', 'usd'],
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:00.000Z',
+    },
+    {
+      id: 'answer-work-authorization-unknown',
+      kind: 'workAuthorization',
+      question: 'Are you authorized to work in this country?',
+      answer: 'Manual confirmation required. Do not answer work authorization automatically.',
+      certainty: CERTAINTY.UNKNOWN,
+      source: 'candidate_profile_seed',
+      tags: ['visa', 'work authorization', 'legal'],
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:00.000Z',
+    },
+  ],
 };
 
 export function createCandidateProfile(input, options = {}) {
@@ -98,6 +155,7 @@ export function createCandidateProfile(input, options = {}) {
     technologies: dedupeStrings(input.technologies),
     knowledgeAreas: dedupeStrings(input.knowledgeAreas ?? []),
     prohibitedClaims: dedupeStrings(input.prohibitedClaims ?? []),
+    answerLibrary: normalizeAnswerLibrary(input.answerLibrary ?? [], source),
   };
 
   normalized.facts = createCandidateFacts(normalized, source);
@@ -124,6 +182,30 @@ export function createCandidateFactRows(profileId, facts) {
     certainty: entry.certainty,
     source: entry.source,
   }));
+}
+
+export function createAnswerLibraryEntry(input, options = {}) {
+  const timestamp = options.timestamp ?? new Date().toISOString();
+
+  return {
+    id: options.id ?? input.id ?? randomUUID(),
+    kind: String(input.kind ?? 'custom').trim() || 'custom',
+    question: String(input.question ?? '').trim(),
+    answer: String(input.answer ?? '').trim(),
+    certainty: input.certainty ?? CERTAINTY.REQUIRES_APPROVAL,
+    source: String(input.source ?? options.source ?? 'candidate_profile_seed').trim(),
+    tags: dedupeStrings(input.tags ?? []),
+    createdAt: input.createdAt ?? options.createdAt ?? timestamp,
+    updatedAt: options.updatedAt ?? input.updatedAt ?? timestamp,
+  };
+}
+
+function normalizeAnswerLibrary(values, source) {
+  return values.map((entry) =>
+    createAnswerLibraryEntry(entry, {
+      source,
+    }),
+  );
 }
 
 function fact(key, value, source) {

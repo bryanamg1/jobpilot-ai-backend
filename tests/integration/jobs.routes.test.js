@@ -3,6 +3,7 @@ import path from 'node:path';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
+import { defaultCandidateProfile } from '../../src/config/candidateProfileSeed.js';
 import { JOB_STATUS } from '../../src/constants/jobStatus.js';
 import { getInMemoryRuntime } from '../../src/repositories/inMemory/inMemoryRuntime.js';
 import { resetRepositoryForTests } from '../../src/repositories/repositoryFactory.js';
@@ -14,6 +15,7 @@ describe('jobs routes', () => {
   beforeEach(() => {
     resetRepositoryForTests();
     const runtime = getInMemoryRuntime();
+    runtime.profile = structuredClone(defaultCandidateProfile);
     runtime.resumes = [];
     runtime.offers = [];
     runtime.audits = [];
@@ -129,6 +131,8 @@ describe('jobs routes', () => {
     expect(previewResponse.body.data.subject).toContain('Backend Developer');
     expect(previewResponse.body.data.body).toContain('Bryan Marquez');
     expect(previewResponse.body.data.generation.mode).toBe('deterministic');
+    expect(previewResponse.body.data.suggestedAnswers.some((item) => item.kind === 'salaryExpectation')).toBe(true);
+    expect(previewResponse.body.data.suggestedAnswers.some((item) => item.kind === 'englishLevel')).toBe(true);
   });
 
   it('blocks draft preview generation when the offer is rejected by rules', async () => {
