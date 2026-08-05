@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../lib/asyncHandler.js';
-import { manualJobInputSchema } from '../../schemas/jobSchemas.js';
+import { jobDraftPreviewParamsSchema, manualJobInputSchema } from '../../schemas/jobSchemas.js';
 
-export function createJobsRouter({ jobOfferService }) {
+export function createJobsRouter({ jobOfferService, jobDraftService }) {
   const router = Router();
 
   router.get(
@@ -19,6 +19,15 @@ export function createJobsRouter({ jobOfferService }) {
       const input = manualJobInputSchema.parse(req.body);
       const record = await jobOfferService.createFromManualInput(input);
       res.status(201).json({ data: record });
+    }),
+  );
+
+  router.post(
+    '/:jobId/draft-preview',
+    asyncHandler(async (req, res) => {
+      const params = jobDraftPreviewParamsSchema.parse(req.params);
+      const preview = await jobDraftService.createPreview(params.jobId);
+      res.json({ data: preview });
     }),
   );
 

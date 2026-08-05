@@ -82,6 +82,9 @@ export function createJobOfferService(repository, auditService, options = {}) {
     async list() {
       return repository.listJobAnalyses();
     },
+    async getById(jobId) {
+      return repository.getJobAnalysisById(jobId);
+    },
   };
 }
 

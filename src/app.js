@@ -11,7 +11,9 @@ import { getRepository } from './repositories/repositoryFactory.js';
 import { createAuditService } from './services/audit/auditService.js';
 import { createDashboardService } from './services/dashboard/dashboardService.js';
 import { createHealthService } from './services/health/healthService.js';
+import { createJobDraftService } from './services/jobs/jobDraftService.js';
 import { createJobOfferService } from './services/jobs/jobOfferService.js';
+import { createOpenAiDraftService } from './services/openai/openAiDraftService.js';
 import { createOpenAiEnrichmentService } from './services/openai/openAiEnrichmentService.js';
 import { createProfileService } from './services/profile/profileService.js';
 import { createDashboardRouter } from './routes/v1/dashboard.routes.js';
@@ -25,10 +27,17 @@ export function buildApp(options = {}) {
   const auditService = options.auditService ?? createAuditService(repository);
   const openAiEnrichmentService =
     options.openAiEnrichmentService ?? createOpenAiEnrichmentService();
+  const openAiDraftService =
+    options.openAiDraftService ?? createOpenAiDraftService();
   const jobOfferService =
     options.jobOfferService ??
     createJobOfferService(repository, auditService, {
       openAiEnrichmentService,
+    });
+  const jobDraftService =
+    options.jobDraftService ??
+    createJobDraftService(repository, auditService, {
+      openAiDraftService,
     });
   const dashboardService = options.dashboardService ?? createDashboardService(repository);
   const healthService = options.healthService ?? createHealthService(repository);
@@ -54,7 +63,7 @@ export function buildApp(options = {}) {
 
   app.use('/api/v1/health', createHealthRouter({ healthService }));
   app.use('/api/v1/profile', createProfileRouter({ profileService }));
-  app.use('/api/v1/jobs', createJobsRouter({ jobOfferService }));
+  app.use('/api/v1/jobs', createJobsRouter({ jobOfferService, jobDraftService }));
   app.use('/api/v1/dashboard', createDashboardRouter({ dashboardService }));
   app.use('/api/v1/docs', createDocsRouter());
 

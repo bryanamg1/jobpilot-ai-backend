@@ -35,6 +35,13 @@ export function createMysqlRepository() {
       );
       return rows.map((row) => JSON.parse(row.payload_json));
     },
+    async getJobAnalysisById(jobId) {
+      const [rows] = await pool.query(
+        'SELECT payload_json FROM job_offers WHERE id = ? AND deleted_at IS NULL LIMIT 1',
+        [jobId],
+      );
+      return rows[0] ? JSON.parse(rows[0].payload_json) : null;
+    },
     async findByFingerprint(fingerprint) {
       const [rows] = await pool.query(
         'SELECT payload_json FROM job_offers WHERE dedupe_fingerprint = ? AND deleted_at IS NULL LIMIT 1',
