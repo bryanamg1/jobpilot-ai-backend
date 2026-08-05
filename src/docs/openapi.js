@@ -30,6 +30,31 @@ export const openApiDocument = {
         summary: 'Generate a safe application draft preview for an analyzed job',
       },
     },
+    '/api/v1/jobs/{jobId}/gmail-draft': {
+      post: {
+        summary: 'Create a Gmail draft from a reviewed job draft preview',
+      },
+    },
+    '/api/v1/integrations/gmail/status': {
+      get: {
+        summary: 'Get Gmail OAuth connection status',
+      },
+    },
+    '/api/v1/integrations/gmail/auth-url': {
+      get: {
+        summary: 'Generate the Gmail OAuth consent URL',
+      },
+    },
+    '/api/v1/integrations/gmail/callback': {
+      get: {
+        summary: 'Handle Gmail OAuth callback',
+      },
+    },
+    '/api/v1/integrations/gmail/alerts': {
+      get: {
+        summary: 'List Gmail alert messages matching the configured query',
+      },
+    },
     '/api/v1/dashboard': {
       get: {
         summary: 'Dashboard summary',

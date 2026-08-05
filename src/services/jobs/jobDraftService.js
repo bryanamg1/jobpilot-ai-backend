@@ -23,6 +23,7 @@ export function createJobDraftService(repository, auditService, options = {}) {
         jobId,
         jobTitle: jobAnalysis.jobOffer.title,
         company: jobAnalysis.jobOffer.company,
+        sourceUrl: jobAnalysis.source.originalUrl,
         matchStatus: jobAnalysis.match.status,
         score: jobAnalysis.match.score,
         ...preview,
