@@ -4,6 +4,7 @@ const runtime = {
   profile: structuredClone(defaultCandidateProfile),
   resumes: [],
   offers: [],
+  approvalRequests: [],
   emailDrafts: [],
   audits: [],
 };

@@ -18,6 +18,7 @@ describe('jobs routes', () => {
     runtime.profile = structuredClone(defaultCandidateProfile);
     runtime.resumes = [];
     runtime.offers = [];
+    runtime.approvalRequests = [];
     runtime.audits = [];
   });
 
@@ -133,6 +134,7 @@ describe('jobs routes', () => {
     expect(previewResponse.body.data.generation.mode).toBe('deterministic');
     expect(previewResponse.body.data.suggestedAnswers.some((item) => item.kind === 'salaryExpectation')).toBe(true);
     expect(previewResponse.body.data.suggestedAnswers.some((item) => item.kind === 'englishLevel')).toBe(true);
+    expect(previewResponse.body.data.pendingApprovalRequests.length).toBeGreaterThan(0);
   });
 
   it('blocks draft preview generation when the offer is rejected by rules', async () => {

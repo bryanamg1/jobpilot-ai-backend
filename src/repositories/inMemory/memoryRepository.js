@@ -22,6 +22,39 @@ export function createMemoryRepository() {
       runtime.resumes.push(structuredClone(record));
       return record;
     },
+    async listApprovalRequests() {
+      return runtime.approvalRequests.toSorted(compareApprovalRequests);
+    },
+    async listApprovalRequestsByEntity(entityType, entityId) {
+      return runtime.approvalRequests
+        .filter((entry) => entry.entityType === entityType && entry.entityId === entityId)
+        .toSorted(compareApprovalRequests);
+    },
+    async findApprovalRequest(entityType, entityId, approvalKind) {
+      return (
+        runtime.approvalRequests.find(
+          (entry) =>
+            entry.entityType === entityType &&
+            entry.entityId === entityId &&
+            entry.approvalKind === approvalKind,
+        ) ?? null
+      );
+    },
+    async getApprovalRequestById(requestId) {
+      return runtime.approvalRequests.find((entry) => entry.id === requestId) ?? null;
+    },
+    async saveApprovalRequest(record) {
+      runtime.approvalRequests.push(structuredClone(record));
+      return record;
+    },
+    async updateApprovalRequest(record) {
+      const index = runtime.approvalRequests.findIndex((entry) => entry.id === record.id);
+      if (index === -1) {
+        return null;
+      }
+      runtime.approvalRequests[index] = structuredClone(record);
+      return runtime.approvalRequests[index];
+    },
     async listJobAnalyses() {
       return runtime.offers.toSorted((left, right) => right.createdAt.localeCompare(left.createdAt));
     },
@@ -86,4 +119,23 @@ export function createMemoryRepository() {
       };
     },
   };
+}
+
+function compareApprovalRequests(left, right) {
+  const statusRank = statusPriority(left.status) - statusPriority(right.status);
+  if (statusRank !== 0) {
+    return statusRank;
+  }
+
+  return right.updatedAt.localeCompare(left.updatedAt);
+}
+
+function statusPriority(status) {
+  if (status === 'PENDING') {
+    return 0;
+  }
+  if (status === 'REJECTED') {
+    return 1;
+  }
+  return 2;
 }

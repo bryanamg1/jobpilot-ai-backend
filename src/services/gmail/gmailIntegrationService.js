@@ -165,6 +165,16 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
         });
       }
 
+      const unresolvedApprovals = [
+        ...(preview.pendingApprovalRequests ?? []),
+        ...(preview.rejectedApprovalRequests ?? []),
+      ];
+      if (unresolvedApprovals.length) {
+        throw new HttpError(409, 'Sensitive approval requests must be resolved before creating the Gmail draft', {
+          approvalRequests: unresolvedApprovals,
+        });
+      }
+
       const mimeMessage = buildMimeMessage(preview);
       const response = await gmail.users.drafts.create({
         userId: 'me',
@@ -195,9 +205,13 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
             preview.selectedResume
               ? `Attach the selected CV manually before sending: ${preview.selectedResume.label} (${preview.selectedResume.originalFileName}).`
               : 'No CV is selected for this job yet. Attach the correct CV manually before sending.',
+            ...(preview.approvalRequests ?? []).map(
+              (item) => `Approval ${item.approvalKind}: ${item.status}`,
+            ),
             DRAFT_LABEL_NOTE,
           ],
           selectedResume: preview.selectedResume,
+          approvalRequests: preview.approvalRequests ?? [],
           labelName: session.labelName ?? config.GOOGLE_GMAIL_LABEL,
           labelId: session.labelId ?? null,
         },
@@ -218,6 +232,7 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
         draftLabelNote: DRAFT_LABEL_NOTE,
         attachmentStatus: 'MANUAL_REQUIRED',
         selectedResume: preview.selectedResume,
+        approvalRequests: preview.approvalRequests ?? [],
         warnings: record.metadata.warnings,
       };
     },
