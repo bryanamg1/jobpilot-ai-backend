@@ -29,6 +29,62 @@ export function createMysqlRepository() {
 
       return readCandidateProfile(pool, profile.id);
     },
+    async listResumes() {
+      await ensureCandidateProfile(pool, defaultCandidateProfile);
+
+      const [rows] = await pool.query(
+        `
+          SELECT id, candidate_profile_id, label, file_path, metadata_json, created_at, updated_at
+          FROM resumes
+          WHERE candidate_profile_id = ? AND deleted_at IS NULL
+          ORDER BY updated_at DESC, created_at DESC
+          LIMIT 100
+        `,
+        [profileId],
+      );
+
+      return rows.map(mapResumeRow);
+    },
+    async getResumeById(resumeId) {
+      const [rows] = await pool.query(
+        `
+          SELECT id, candidate_profile_id, label, file_path, metadata_json, created_at, updated_at
+          FROM resumes
+          WHERE id = ? AND deleted_at IS NULL
+          LIMIT 1
+        `,
+        [resumeId],
+      );
+
+      return rows[0] ? mapResumeRow(rows[0]) : null;
+    },
+    async saveResume(record) {
+      await ensureCandidateProfile(pool, defaultCandidateProfile);
+
+      await pool.query(
+        `
+          INSERT INTO resumes (
+            id,
+            candidate_profile_id,
+            label,
+            file_path,
+            metadata_json,
+            created_at,
+            updated_at,
+            deleted_at
+          ) VALUES (?, ?, ?, ?, ?, NOW(), NOW(), NULL)
+        `,
+        [
+          record.id,
+          record.candidateProfileId,
+          record.label,
+          record.filePath,
+          JSON.stringify(record.metadata),
+        ],
+      );
+
+      return record;
+    },
     async listJobAnalyses() {
       const [rows] = await pool.query(
         'SELECT payload_json FROM job_offers WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100',
@@ -366,4 +422,24 @@ function parseStoredJson(value) {
   }
 
   throw new TypeError(`Unsupported JSON column type: ${typeof value}`);
+}
+
+function mapResumeRow(row) {
+  return {
+    id: row.id,
+    candidateProfileId: row.candidate_profile_id,
+    label: row.label,
+    filePath: row.file_path,
+    metadata: parseStoredJson(row.metadata_json),
+    createdAt: serializeDate(row.created_at),
+    updatedAt: serializeDate(row.updated_at),
+  };
+}
+
+function serializeDate(value) {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return String(value);
 }

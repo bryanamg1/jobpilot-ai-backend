@@ -31,6 +31,8 @@ const envSchema = z.object({
     .string()
     .default('("linkedin" OR "job alert" OR "hiring" OR "vacante" OR "oportunidad laboral") newer_than:30d'),
   GOOGLE_GMAIL_MAX_RESULTS: z.coerce.number().default(10),
+  RESUME_STORAGE_DIR: z.string().default('storage/resumes'),
+  RESUME_MAX_BYTES: z.coerce.number().default(5 * 1024 * 1024),
   ENCRYPTION_KEY: z.string().optional(),
 });
 

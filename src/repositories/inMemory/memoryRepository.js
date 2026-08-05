@@ -12,6 +12,16 @@ export function createMemoryRepository() {
       runtime.profile = structuredClone(profile);
       return runtime.profile;
     },
+    async listResumes() {
+      return runtime.resumes.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    },
+    async getResumeById(resumeId) {
+      return runtime.resumes.find((entry) => entry.id === resumeId) ?? null;
+    },
+    async saveResume(record) {
+      runtime.resumes.push(structuredClone(record));
+      return record;
+    },
     async listJobAnalyses() {
       return runtime.offers.toSorted((left, right) => right.createdAt.localeCompare(left.createdAt));
     },

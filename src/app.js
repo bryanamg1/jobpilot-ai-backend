@@ -18,12 +18,14 @@ import { createJobOfferService } from './services/jobs/jobOfferService.js';
 import { createOpenAiDraftService } from './services/openai/openAiDraftService.js';
 import { createOpenAiEnrichmentService } from './services/openai/openAiEnrichmentService.js';
 import { createProfileService } from './services/profile/profileService.js';
+import { createResumeService } from './services/resumes/resumeService.js';
 import { createDashboardRouter } from './routes/v1/dashboard.routes.js';
 import { createDocsRouter } from './routes/v1/docs.routes.js';
 import { createHealthRouter } from './routes/v1/health.routes.js';
 import { createIntegrationsRouter, handleGmailCallbackRequest } from './routes/v1/integrations.routes.js';
 import { createJobsRouter } from './routes/v1/jobs.routes.js';
 import { createProfileRouter } from './routes/v1/profile.routes.js';
+import { createResumesRouter } from './routes/v1/resumes.routes.js';
 import { asyncHandler } from './lib/asyncHandler.js';
 
 export function buildApp(options = {}) {
@@ -51,6 +53,7 @@ export function buildApp(options = {}) {
   const dashboardService = options.dashboardService ?? createDashboardService(repository);
   const healthService = options.healthService ?? createHealthService(repository);
   const profileService = options.profileService ?? createProfileService(repository, auditService);
+  const resumeService = options.resumeService ?? createResumeService(repository, auditService);
 
   const app = express();
 
@@ -108,7 +111,7 @@ export function buildApp(options = {}) {
       limit: 60,
     }),
   );
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '8mb' }));
 
   app.use('/api/v1/health', createHealthRouter({ healthService }));
   app.use('/api/v1/profile', createProfileRouter({ profileService }));
@@ -119,8 +122,10 @@ export function buildApp(options = {}) {
       jobDraftService,
       gmailIntegrationService,
       jobApprovalService,
+      resumeService,
     }),
   );
+  app.use('/api/v1/resumes', createResumesRouter({ resumeService }));
   app.use('/api/v1/integrations', createIntegrationsRouter({ gmailIntegrationService }));
   app.get(
     '/api/auth/google/callback',

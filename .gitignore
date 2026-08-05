@@ -9,6 +9,7 @@ logs/
 *.log
 playwright/.auth/
 storage/browser/
+storage/resumes/
 storage/uploads/
 storage/cv/
 storage/tokens/

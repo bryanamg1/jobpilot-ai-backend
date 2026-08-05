@@ -162,6 +162,13 @@ export function buildFallbackDraft(jobAnalysis) {
   if (!recipient) {
     warnings.push('Recipient email is not visible in the source. Do not create a Gmail draft yet.');
   }
+  if (jobAnalysis.resumeSelection?.label) {
+    warnings.push(
+      `Selected resume: ${jobAnalysis.resumeSelection.label}. Attach it manually in Gmail before sending.`,
+    );
+  } else {
+    warnings.push('No resume selected yet for this job. Choose the appropriate CV before sending.');
+  }
 
   return {
     status: approvals.length ? 'REVIEW_REQUIRED' : 'READY',
