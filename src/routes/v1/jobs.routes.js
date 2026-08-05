@@ -1,8 +1,17 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../lib/asyncHandler.js';
-import { jobDraftPreviewParamsSchema, manualJobInputSchema } from '../../schemas/jobSchemas.js';
+import {
+  jobApprovalInputSchema,
+  jobDraftPreviewParamsSchema,
+  manualJobInputSchema,
+} from '../../schemas/jobSchemas.js';
 
-export function createJobsRouter({ jobOfferService, jobDraftService, gmailIntegrationService }) {
+export function createJobsRouter({
+  jobOfferService,
+  jobDraftService,
+  gmailIntegrationService,
+  jobApprovalService,
+}) {
   const router = Router();
 
   router.get(
@@ -37,6 +46,26 @@ export function createJobsRouter({ jobOfferService, jobDraftService, gmailIntegr
       const params = jobDraftPreviewParamsSchema.parse(req.params);
       const payload = await gmailIntegrationService.createDraftFromJob(params.jobId);
       res.status(201).json({ data: payload });
+    }),
+  );
+
+  router.post(
+    '/:jobId/approve',
+    asyncHandler(async (req, res) => {
+      const params = jobDraftPreviewParamsSchema.parse(req.params);
+      const input = jobApprovalInputSchema.parse(req.body);
+      const payload = await jobApprovalService.approve(params.jobId, input);
+      res.json({ data: payload });
+    }),
+  );
+
+  router.post(
+    '/:jobId/reject',
+    asyncHandler(async (req, res) => {
+      const params = jobDraftPreviewParamsSchema.parse(req.params);
+      const input = jobApprovalInputSchema.parse(req.body);
+      const payload = await jobApprovalService.reject(params.jobId, input);
+      res.json({ data: payload });
     }),
   );
 

@@ -33,21 +33,42 @@ export function createMysqlRepository() {
       const [rows] = await pool.query(
         'SELECT payload_json FROM job_offers WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 100',
       );
-      return rows.map((row) => JSON.parse(row.payload_json));
+      return rows.map((row) => parseStoredJson(row.payload_json));
     },
     async getJobAnalysisById(jobId) {
       const [rows] = await pool.query(
         'SELECT payload_json FROM job_offers WHERE id = ? AND deleted_at IS NULL LIMIT 1',
         [jobId],
       );
-      return rows[0] ? JSON.parse(rows[0].payload_json) : null;
+      return rows[0] ? parseStoredJson(rows[0].payload_json) : null;
+    },
+    async updateJobAnalysis(record) {
+      await pool.query(
+        `
+          UPDATE job_offers
+          SET status = ?, payload_json = ?, updated_at = NOW()
+          WHERE id = ? AND deleted_at IS NULL
+        `,
+        [record.match.status, JSON.stringify(record), record.id],
+      );
+
+      await pool.query(
+        `
+          UPDATE job_matches
+          SET status = ?, explanation_json = ?, updated_at = NOW()
+          WHERE job_offer_id = ?
+        `,
+        [record.match.status, JSON.stringify(record.match), record.id],
+      );
+
+      return record;
     },
     async findByFingerprint(fingerprint) {
       const [rows] = await pool.query(
         'SELECT payload_json FROM job_offers WHERE dedupe_fingerprint = ? AND deleted_at IS NULL LIMIT 1',
         [fingerprint],
       );
-      return rows[0] ? JSON.parse(rows[0].payload_json) : null;
+      return rows[0] ? parseStoredJson(rows[0].payload_json) : null;
     },
     async saveJobAnalysis(record) {
       await ensureCandidateProfile(pool, defaultCandidateProfile);
@@ -178,9 +199,9 @@ export function createMysqlRepository() {
         `
           SELECT
             COUNT(*) AS total,
-            SUM(CASE WHEN status = 'READY_TO_PREPARE' THEN 1 ELSE 0 END) AS readyToPrepare,
+            SUM(CASE WHEN status IN ('READY_TO_PREPARE', 'APPROVED') THEN 1 ELSE 0 END) AS readyToPrepare,
             SUM(CASE WHEN status = 'AWAITING_APPROVAL' THEN 1 ELSE 0 END) AS awaitingApproval,
-            SUM(CASE WHEN status = 'REJECTED_BY_RULES' THEN 1 ELSE 0 END) AS blocked
+            SUM(CASE WHEN status IN ('REJECTED_BY_RULES', 'REJECTED') THEN 1 ELSE 0 END) AS blocked
           FROM job_offers
           WHERE deleted_at IS NULL
         `,
@@ -253,7 +274,7 @@ async function readCandidateProfile(pool, profileId) {
     [profileId],
   );
 
-  const profile = JSON.parse(profileRows[0].profile_json);
+  const profile = parseStoredJson(profileRows[0].profile_json);
   profile.facts = factRows.map((row) => ({
     key: row.fact_key,
     value: row.fact_value,
@@ -329,4 +350,20 @@ async function replaceCandidateFacts(connection, profileId, facts) {
       ],
     );
   }
+}
+
+function parseStoredJson(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    return JSON.parse(value);
+  }
+
+  if (typeof value === 'object') {
+    return structuredClone(value);
+  }
+
+  throw new TypeError(`Unsupported JSON column type: ${typeof value}`);
 }

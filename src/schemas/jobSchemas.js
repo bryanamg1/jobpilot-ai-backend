@@ -9,3 +9,7 @@ export const manualJobInputSchema = z.object({
 export const jobDraftPreviewParamsSchema = z.object({
   jobId: z.string().min(1, 'Job id is required'),
 });
+
+export const jobApprovalInputSchema = z.object({
+  reason: z.string().trim().max(300).optional().default(''),
+});

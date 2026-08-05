@@ -35,6 +35,16 @@ export const openApiDocument = {
         summary: 'Create a Gmail draft from a reviewed job draft preview',
       },
     },
+    '/api/v1/jobs/{jobId}/approve': {
+      post: {
+        summary: 'Approve a job that is awaiting human review',
+      },
+    },
+    '/api/v1/jobs/{jobId}/reject': {
+      post: {
+        summary: 'Reject a job from the human approval queue',
+      },
+    },
     '/api/v1/integrations/gmail/status': {
       get: {
         summary: 'Get Gmail OAuth connection status',

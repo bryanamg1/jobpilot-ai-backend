@@ -12,6 +12,7 @@ import { createAuditService } from './services/audit/auditService.js';
 import { createDashboardService } from './services/dashboard/dashboardService.js';
 import { createGmailIntegrationService } from './services/gmail/gmailIntegrationService.js';
 import { createHealthService } from './services/health/healthService.js';
+import { createJobApprovalService } from './services/jobs/jobApprovalService.js';
 import { createJobDraftService } from './services/jobs/jobDraftService.js';
 import { createJobOfferService } from './services/jobs/jobOfferService.js';
 import { createOpenAiDraftService } from './services/openai/openAiDraftService.js';
@@ -20,9 +21,10 @@ import { createProfileService } from './services/profile/profileService.js';
 import { createDashboardRouter } from './routes/v1/dashboard.routes.js';
 import { createDocsRouter } from './routes/v1/docs.routes.js';
 import { createHealthRouter } from './routes/v1/health.routes.js';
-import { createIntegrationsRouter } from './routes/v1/integrations.routes.js';
+import { createIntegrationsRouter, handleGmailCallbackRequest } from './routes/v1/integrations.routes.js';
 import { createJobsRouter } from './routes/v1/jobs.routes.js';
 import { createProfileRouter } from './routes/v1/profile.routes.js';
+import { asyncHandler } from './lib/asyncHandler.js';
 
 export function buildApp(options = {}) {
   const repository = options.repository ?? getRepository();
@@ -41,6 +43,8 @@ export function buildApp(options = {}) {
     createJobDraftService(repository, auditService, {
       openAiDraftService,
     });
+  const jobApprovalService =
+    options.jobApprovalService ?? createJobApprovalService(repository, auditService);
   const gmailIntegrationService =
     options.gmailIntegrationService ??
     createGmailIntegrationService(repository, auditService, jobDraftService);
@@ -51,7 +55,47 @@ export function buildApp(options = {}) {
   const app = express();
 
   app.use(requestContext);
-  app.use(pinoHttp({ logger, quietReqLogger: env.isTest }));
+  app.use(
+    pinoHttp({
+      logger,
+      quietReqLogger: true,
+      customLogLevel(_req, res, error) {
+        if (error || res.statusCode >= 500) {
+          return 'error';
+        }
+        if (res.statusCode >= 400) {
+          return 'warn';
+        }
+        return 'silent';
+      },
+      autoLogging: {
+        ignore(req) {
+          return req.method === 'OPTIONS';
+        },
+      },
+      serializers: {
+        req(req) {
+          return {
+            id: req.id,
+            method: req.method,
+            url: req.url,
+          };
+        },
+        res(res) {
+          return {
+            statusCode: res.statusCode,
+          };
+        },
+        err(error) {
+          return {
+            type: error.name,
+            message: error.message,
+            stack: env.isProduction ? undefined : error.stack,
+          };
+        },
+      },
+    }),
+  );
   app.use(helmet());
   app.use(
     cors({
@@ -68,8 +112,20 @@ export function buildApp(options = {}) {
 
   app.use('/api/v1/health', createHealthRouter({ healthService }));
   app.use('/api/v1/profile', createProfileRouter({ profileService }));
-  app.use('/api/v1/jobs', createJobsRouter({ jobOfferService, jobDraftService, gmailIntegrationService }));
+  app.use(
+    '/api/v1/jobs',
+    createJobsRouter({
+      jobOfferService,
+      jobDraftService,
+      gmailIntegrationService,
+      jobApprovalService,
+    }),
+  );
   app.use('/api/v1/integrations', createIntegrationsRouter({ gmailIntegrationService }));
+  app.get(
+    '/api/auth/google/callback',
+    asyncHandler(async (req, res) => handleGmailCallbackRequest(req, res, gmailIntegrationService)),
+  );
   app.use('/api/v1/dashboard', createDashboardRouter({ dashboardService }));
   app.use('/api/v1/docs', createDocsRouter());
 
