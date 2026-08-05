@@ -8,6 +8,10 @@ export function createMemoryRepository() {
     async getCandidateProfile() {
       return runtime.profile;
     },
+    async updateCandidateProfile(profile) {
+      runtime.profile = structuredClone(profile);
+      return runtime.profile;
+    },
     async listJobAnalyses() {
       return runtime.offers.toSorted((left, right) => right.createdAt.localeCompare(left.createdAt));
     },

@@ -25,7 +25,7 @@ export function buildApp() {
   const jobOfferService = createJobOfferService(repository, auditService);
   const dashboardService = createDashboardService(repository);
   const healthService = createHealthService(repository);
-  const profileService = createProfileService(repository);
+  const profileService = createProfileService(repository, auditService);
 
   const app = express();
 

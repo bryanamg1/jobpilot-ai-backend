@@ -1,13 +1,33 @@
 import { defaultCandidateProfile } from '../../config/candidateProfileSeed.js';
+import { createCandidateFactRows } from '../../domain/candidateProfile.js';
 import { getMysqlPool } from './mysqlClient.js';
 
 export function createMysqlRepository() {
   const pool = getMysqlPool();
+  const profileId = defaultCandidateProfile.id;
 
   return {
     mode: 'mysql',
     async getCandidateProfile() {
-      return structuredClone(defaultCandidateProfile);
+      await ensureCandidateProfile(pool, defaultCandidateProfile);
+      return readCandidateProfile(pool, profileId);
+    },
+    async updateCandidateProfile(profile) {
+      const connection = await pool.getConnection();
+
+      try {
+        await connection.beginTransaction();
+        await upsertCandidateProfile(connection, profile);
+        await replaceCandidateFacts(connection, profile.id, profile.facts);
+        await connection.commit();
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+
+      return readCandidateProfile(pool, profile.id);
     },
     async listJobAnalyses() {
       const [rows] = await pool.query(
@@ -23,24 +43,7 @@ export function createMysqlRepository() {
       return rows[0] ? JSON.parse(rows[0].payload_json) : null;
     },
     async saveJobAnalysis(record) {
-      await pool.query(
-        `
-          INSERT INTO candidate_profiles (
-            id,
-            display_name,
-            headline_json,
-            profile_json,
-            created_at,
-            updated_at
-          ) VALUES (?, ?, ?, ?, NOW(), NOW())
-          ON DUPLICATE KEY UPDATE
-            display_name = VALUES(display_name),
-            headline_json = VALUES(headline_json),
-            profile_json = VALUES(profile_json),
-            updated_at = NOW()
-        `,
-        [record.profile.id, record.profile.name, JSON.stringify([]), JSON.stringify(record.profile)],
-      );
+      await ensureCandidateProfile(pool, defaultCandidateProfile);
 
       await pool.query(
         `
@@ -163,4 +166,128 @@ export function createMysqlRepository() {
       };
     },
   };
+}
+
+async function ensureCandidateProfile(pool, profile) {
+  const [rows] = await pool.query(
+    'SELECT id FROM candidate_profiles WHERE id = ? LIMIT 1',
+    [profile.id],
+  );
+
+  if (rows[0]) {
+    return;
+  }
+
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    await upsertCandidateProfile(connection, profile);
+    await replaceCandidateFacts(connection, profile.id, profile.facts);
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+async function readCandidateProfile(pool, profileId) {
+  const [profileRows] = await pool.query(
+    `
+      SELECT profile_json
+      FROM candidate_profiles
+      WHERE id = ? AND deleted_at IS NULL
+      LIMIT 1
+    `,
+    [profileId],
+  );
+
+  const [factRows] = await pool.query(
+    `
+      SELECT fact_key, fact_value, certainty, source
+      FROM candidate_facts
+      WHERE candidate_profile_id = ? AND deleted_at IS NULL
+      ORDER BY created_at ASC, id ASC
+    `,
+    [profileId],
+  );
+
+  const profile = JSON.parse(profileRows[0].profile_json);
+  profile.facts = factRows.map((row) => ({
+    key: row.fact_key,
+    value: row.fact_value,
+    certainty: row.certainty,
+    source: row.source,
+  }));
+
+  return profile;
+}
+
+async function upsertCandidateProfile(connection, profile) {
+  await connection.query(
+    `
+      INSERT INTO candidate_profiles (
+        id,
+        display_name,
+        headline_json,
+        profile_json,
+        created_at,
+        updated_at,
+        deleted_at
+      ) VALUES (?, ?, ?, ?, NOW(), NOW(), NULL)
+      ON DUPLICATE KEY UPDATE
+        display_name = VALUES(display_name),
+        headline_json = VALUES(headline_json),
+        profile_json = VALUES(profile_json),
+        deleted_at = NULL,
+        updated_at = NOW()
+    `,
+    [
+      profile.id,
+      profile.name,
+      JSON.stringify(profile.headlineTargets),
+      JSON.stringify(profile),
+    ],
+  );
+}
+
+async function replaceCandidateFacts(connection, profileId, facts) {
+  await connection.query(
+    `
+      UPDATE candidate_facts
+      SET deleted_at = NOW(), updated_at = NOW()
+      WHERE candidate_profile_id = ? AND deleted_at IS NULL
+    `,
+    [profileId],
+  );
+
+  const factRows = createCandidateFactRows(profileId, facts);
+
+  for (const row of factRows) {
+    await connection.query(
+      `
+        INSERT INTO candidate_facts (
+          id,
+          candidate_profile_id,
+          fact_key,
+          fact_value,
+          certainty,
+          source,
+          created_at,
+          updated_at,
+          deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), NULL)
+      `,
+      [
+        row.id,
+        row.candidateProfileId,
+        row.factKey,
+        row.factValue,
+        row.certainty,
+        row.source,
+      ],
+    );
+  }
 }

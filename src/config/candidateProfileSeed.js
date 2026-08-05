@@ -1,85 +1,11 @@
-import { CERTAINTY } from '../constants/certainty.js';
+import {
+  createCandidateProfile,
+  defaultCandidateProfileInput,
+} from '../domain/candidateProfile.js';
 
-export const defaultCandidateProfile = {
-  id: 'candidate-bryan-marquez',
-  name: 'Bryan Marquez',
-  headlineTargets: [
-    'Full Stack Developer',
-    'Backend Developer',
-    'Frontend Developer',
-    'Junior Software Developer',
-  ],
-  location: 'Buenos Aires, Argentina',
-  availability: 'Full time',
-  modalities: ['remote', 'hybrid', 'onsite'],
-  englishLevel: 'B1',
-  salaryExpectation: {
-    amount: 1000,
-    currency: 'USD',
-    period: 'monthly',
-    certainty: CERTAINTY.REQUIRES_APPROVAL,
+export const defaultCandidateProfile = createCandidateProfile(
+  defaultCandidateProfileInput,
+  {
     source: 'candidate_profile_seed',
   },
-  publicLinks: {
-    github: 'https://github.com/bryanamg1',
-    linkedin: 'https://www.linkedin.com/in/bryan-marquez-dev/',
-  },
-  contact: {
-    email: 'bryanamg181@gmail.com',
-  },
-  projects: ['Social App', 'PronostIA', 'Venezuela SOS', 'TechStore'],
-  facts: [
-    fact('location', 'Buenos Aires, Argentina'),
-    fact('availability', 'Full time'),
-    fact('englishLevel', 'B1'),
-    fact('modality', 'remote'),
-    fact('modality', 'hybrid'),
-    fact('modality', 'onsite'),
-    fact('technology', 'JavaScript ES6+'),
-    fact('technology', 'Node.js'),
-    fact('technology', 'Express'),
-    fact('technology', 'React'),
-    fact('technology', 'Vite'),
-    fact('technology', 'React Router'),
-    fact('technology', 'Context API'),
-    fact('technology', 'MySQL'),
-    fact('technology', 'MongoDB'),
-    fact('technology', 'Socket.io'),
-    fact('technology', 'Redis'),
-    fact('technology', 'Jest'),
-    fact('technology', 'Supertest'),
-    fact('technology', 'Docker'),
-    fact('technology', 'JWT'),
-    fact('technology', 'Multer'),
-    fact('technology', 'Cloudinary'),
-    fact('technology', 'Winston'),
-    fact('technology', 'CORS'),
-    fact('technology', 'dotenv'),
-    fact('technology', 'bcrypt'),
-    fact('technology', 'express-validator'),
-    fact('technology', 'Git'),
-    fact('technology', 'GitHub'),
-    fact('technology', 'Railway'),
-    fact('technology', 'Vercel'),
-    fact('technology', 'Postman'),
-    fact('technology', 'MySQL Workbench'),
-    fact('knowledge', 'AI agents'),
-  ],
-  prohibitedClaims: [
-    'English C1',
-    'Advanced WordPress',
-    'Advanced PHP',
-    'AWS experience',
-    'Terraform experience',
-    'Unverified years of experience',
-  ],
-};
-
-function fact(key, value) {
-  return {
-    key,
-    value,
-    source: 'candidate_profile_seed',
-    certainty: CERTAINTY.CONFIRMED,
-  };
-}
+);
