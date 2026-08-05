@@ -5,12 +5,14 @@ import {
   jobDraftPreviewParamsSchema,
   manualJobInputSchema,
 } from '../../schemas/jobSchemas.js';
+import { jobResumeSelectionSchema } from '../../schemas/resumeSchemas.js';
 
 export function createJobsRouter({
   jobOfferService,
   jobDraftService,
   gmailIntegrationService,
   jobApprovalService,
+  resumeService,
 }) {
   const router = Router();
 
@@ -65,6 +67,16 @@ export function createJobsRouter({
       const params = jobDraftPreviewParamsSchema.parse(req.params);
       const input = jobApprovalInputSchema.parse(req.body);
       const payload = await jobApprovalService.reject(params.jobId, input);
+      res.json({ data: payload });
+    }),
+  );
+
+  router.post(
+    '/:jobId/select-resume',
+    asyncHandler(async (req, res) => {
+      const params = jobDraftPreviewParamsSchema.parse(req.params);
+      const input = jobResumeSelectionSchema.parse(req.body);
+      const payload = await resumeService.assignResumeToJob(params.jobId, input.resumeId);
       res.json({ data: payload });
     }),
   );

@@ -26,6 +26,7 @@ export function createJobDraftService(repository, auditService, options = {}) {
         sourceUrl: jobAnalysis.source.originalUrl,
         matchStatus: jobAnalysis.match.status,
         score: jobAnalysis.match.score,
+        selectedResume: jobAnalysis.resumeSelection ?? null,
         ...preview,
       };
     },

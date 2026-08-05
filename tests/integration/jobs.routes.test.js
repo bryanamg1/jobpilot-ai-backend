@@ -14,6 +14,7 @@ describe('jobs routes', () => {
   beforeEach(() => {
     resetRepositoryForTests();
     const runtime = getInMemoryRuntime();
+    runtime.resumes = [];
     runtime.offers = [];
     runtime.audits = [];
   });
@@ -183,5 +184,39 @@ describe('jobs routes', () => {
     expect(rejectResponse.status).toBe(200);
     expect(rejectResponse.body.data.match.status).toBe(JOB_STATUS.REJECTED);
     expect(rejectResponse.body.data.analysis.review.decision).toBe('rejected');
+  });
+
+  it('assigns a selected resume to a job and exposes it in the preview', async () => {
+    const app = buildApp();
+
+    const resumeResponse = await request(app).post('/api/v1/resumes').send({
+      label: 'Backend CV',
+      fileName: 'Bryan-Marquez-Backend.pdf',
+      mimeType: 'application/pdf',
+      contentBase64: Buffer.from('resume content', 'utf8').toString('base64'),
+    });
+
+    const createResponse = await request(app).post('/api/v1/jobs/manual').send({
+      rawText: fixture('manual-job-spanish.txt'),
+      sourceUrl: 'https://example.com/backend-job-resume',
+      sourceLabel: 'Manual with resume',
+    });
+
+    const assignResponse = await request(app)
+      .post(`/api/v1/jobs/${createResponse.body.data.id}/select-resume`)
+      .send({ resumeId: resumeResponse.body.data.id });
+
+    expect(assignResponse.status).toBe(200);
+    expect(assignResponse.body.data.selectedResume.label).toBe('Backend CV');
+
+    const previewResponse = await request(app)
+      .post(`/api/v1/jobs/${createResponse.body.data.id}/draft-preview`)
+      .send({});
+
+    expect(previewResponse.status).toBe(200);
+    expect(previewResponse.body.data.selectedResume.label).toBe('Backend CV');
+    expect(previewResponse.body.data.generation.warnings).toContain(
+      'Selected resume: Backend CV. Attach it manually in Gmail before sending.',
+    );
   });
 });

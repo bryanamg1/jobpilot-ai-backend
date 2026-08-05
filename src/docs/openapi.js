@@ -45,6 +45,19 @@ export const openApiDocument = {
         summary: 'Reject a job from the human approval queue',
       },
     },
+    '/api/v1/jobs/{jobId}/select-resume': {
+      post: {
+        summary: 'Assign or clear the selected resume for a job offer',
+      },
+    },
+    '/api/v1/resumes': {
+      get: {
+        summary: 'List local resume metadata',
+      },
+      post: {
+        summary: 'Upload a local resume for manual later attachment',
+      },
+    },
     '/api/v1/integrations/gmail/status': {
       get: {
         summary: 'Get Gmail OAuth connection status',

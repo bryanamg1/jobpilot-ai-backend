@@ -192,9 +192,12 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
           generationMode: preview.generation.mode,
           warnings: [
             ...preview.generation.warnings,
-            'Attach the selected CV manually before sending.',
+            preview.selectedResume
+              ? `Attach the selected CV manually before sending: ${preview.selectedResume.label} (${preview.selectedResume.originalFileName}).`
+              : 'No CV is selected for this job yet. Attach the correct CV manually before sending.',
             DRAFT_LABEL_NOTE,
           ],
+          selectedResume: preview.selectedResume,
           labelName: session.labelName ?? config.GOOGLE_GMAIL_LABEL,
           labelId: session.labelId ?? null,
         },
@@ -214,6 +217,7 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
         labelName: config.GOOGLE_GMAIL_LABEL,
         draftLabelNote: DRAFT_LABEL_NOTE,
         attachmentStatus: 'MANUAL_REQUIRED',
+        selectedResume: preview.selectedResume,
         warnings: record.metadata.warnings,
       };
     },
