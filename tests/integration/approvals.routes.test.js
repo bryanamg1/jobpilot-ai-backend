@@ -49,5 +49,16 @@ describe('approval routes', () => {
     expect(approveResponse.status).toBe(200);
     expect(approveResponse.body.data.status).toBe('APPROVED');
     expect(approveResponse.body.data.payload.note).toBe('Salary reviewed manually.');
+
+    const filteredResponse = await request(app).get('/api/v1/approvals').query({
+      status: 'APPROVED',
+      approvalKind: 'salaryExpectation',
+      search: 'Acme',
+    });
+
+    expect(filteredResponse.status).toBe(200);
+    expect(filteredResponse.body.data).toHaveLength(1);
+    expect(filteredResponse.body.data[0].approvalKind).toBe('salaryExpectation');
+    expect(filteredResponse.body.data[0].status).toBe('APPROVED');
   });
 });

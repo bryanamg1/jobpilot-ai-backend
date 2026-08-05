@@ -85,11 +85,120 @@ export function createMysqlRepository() {
 
       return record;
     },
-    async listApprovalRequests() {
+    async listBrowserSessions() {
+      const [rows] = await pool.query(
+        `
+          SELECT id, provider, status, started_at, ended_at, metadata_json, created_at, updated_at
+          FROM browser_sessions
+          ORDER BY
+            CASE status
+              WHEN 'ACTIVE' THEN 0
+              WHEN 'ATTENTION_REQUIRED' THEN 1
+              WHEN 'ERROR' THEN 2
+              ELSE 3
+            END,
+            updated_at DESC,
+            created_at DESC
+          LIMIT 100
+        `,
+      );
+
+      return rows.map(mapBrowserSessionRow);
+    },
+    async getBrowserSessionById(sessionId) {
+      const [rows] = await pool.query(
+        `
+          SELECT id, provider, status, started_at, ended_at, metadata_json, created_at, updated_at
+          FROM browser_sessions
+          WHERE id = ?
+          LIMIT 1
+        `,
+        [sessionId],
+      );
+
+      return rows[0] ? mapBrowserSessionRow(rows[0]) : null;
+    },
+    async saveBrowserSession(record) {
+      await pool.query(
+        `
+          INSERT INTO browser_sessions (
+            id,
+            provider,
+            status,
+            started_at,
+            ended_at,
+            metadata_json,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+        `,
+        [
+          record.id,
+          record.provider,
+          record.status,
+          record.startedAt,
+          record.endedAt,
+          JSON.stringify(record.metadata),
+        ],
+      );
+
+      return record;
+    },
+    async updateBrowserSession(record) {
+      await pool.query(
+        `
+          UPDATE browser_sessions
+          SET status = ?, started_at = ?, ended_at = ?, metadata_json = ?, updated_at = NOW()
+          WHERE id = ?
+        `,
+        [
+          record.status,
+          record.startedAt,
+          record.endedAt,
+          JSON.stringify(record.metadata),
+          record.id,
+        ],
+      );
+
+      return record;
+    },
+    async listApprovalRequests(filters = {}) {
+      const clauses = [];
+      const params = [];
+
+      if (filters.entityType) {
+        clauses.push('entity_type = ?');
+        params.push(filters.entityType);
+      }
+
+      if (filters.entityId) {
+        clauses.push('entity_id = ?');
+        params.push(filters.entityId);
+      }
+
+      if (filters.approvalKind) {
+        clauses.push('approval_kind = ?');
+        params.push(filters.approvalKind);
+      }
+
+      if (filters.status) {
+        clauses.push('status = ?');
+        params.push(filters.status);
+      }
+
+      if (filters.search) {
+        clauses.push(
+          `(approval_kind LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.jobTitle')) LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.company')) LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.reason')) LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.note')) LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.sourceUrl')) LIKE ?)`,
+        );
+        const like = `%${String(filters.search).trim()}%`;
+        params.push(like, like, like, like, like, like);
+      }
+
       const [rows] = await pool.query(
         `
           SELECT id, entity_type, entity_id, approval_kind, status, payload_json, created_at, updated_at
           FROM approval_requests
+          ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
           ORDER BY
             CASE status
               WHEN 'PENDING' THEN 0
@@ -98,8 +207,9 @@ export function createMysqlRepository() {
             END,
             updated_at DESC,
             created_at DESC
-          LIMIT 200
+          LIMIT ?
         `,
+        [...params, filters.limit ?? 200],
       );
 
       return rows.map(mapApprovalRequestRow);
@@ -353,6 +463,38 @@ export function createMysqlRepository() {
       );
       return event;
     },
+    async listAuditEvents(filters = {}) {
+      const clauses = [];
+      const params = [];
+
+      if (filters.entityType) {
+        clauses.push('entity_type = ?');
+        params.push(filters.entityType);
+      }
+
+      if (filters.entityId) {
+        clauses.push('entity_id = ?');
+        params.push(filters.entityId);
+      }
+
+      if (filters.eventName) {
+        clauses.push('event_name = ?');
+        params.push(filters.eventName);
+      }
+
+      const [rows] = await pool.query(
+        `
+          SELECT id, entity_type, entity_id, event_name, payload_json, created_at
+          FROM audit_events
+          ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+          ORDER BY created_at DESC, id DESC
+          LIMIT ?
+        `,
+        [...params, filters.limit ?? 50],
+      );
+
+      return rows.map(mapAuditEventRow);
+    },
     async getDashboardSummary() {
       const latest = await this.listJobAnalyses();
       const [metricsRows] = await pool.query(
@@ -540,6 +682,19 @@ function mapResumeRow(row) {
   };
 }
 
+function mapBrowserSessionRow(row) {
+  return {
+    id: row.id,
+    provider: row.provider,
+    status: row.status,
+    startedAt: serializeDate(row.started_at),
+    endedAt: row.ended_at ? serializeDate(row.ended_at) : null,
+    metadata: parseStoredJson(row.metadata_json),
+    createdAt: serializeDate(row.created_at),
+    updatedAt: serializeDate(row.updated_at),
+  };
+}
+
 function mapApprovalRequestRow(row) {
   return {
     id: row.id,
@@ -550,6 +705,17 @@ function mapApprovalRequestRow(row) {
     payload: parseStoredJson(row.payload_json),
     createdAt: serializeDate(row.created_at),
     updatedAt: serializeDate(row.updated_at),
+  };
+}
+
+function mapAuditEventRow(row) {
+  return {
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    eventName: row.event_name,
+    payload: parseStoredJson(row.payload_json),
+    createdAt: serializeDate(row.created_at),
   };
 }
 

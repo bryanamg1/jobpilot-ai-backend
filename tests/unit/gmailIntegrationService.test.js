@@ -120,8 +120,130 @@ describe('gmailIntegrationService', () => {
 
     expect(payload.provider).toBe('GMAIL');
     expect(payload.externalId).toBe('gmail-draft-1');
+    expect(payload.attachmentStatus).toBe('MANUAL_REQUIRED');
     expect(saveEmailDraft).toHaveBeenCalledTimes(1);
     expect(recordAudit).toHaveBeenCalledWith('gmail.draft_created', 'job_offer', 'job-1', expect.any(Object));
+  });
+
+  it('attaches the selected local resume automatically when the stored file is available', async () => {
+    const saveEmailDraft = vi.fn(async (record) => record);
+    const recordAudit = vi.fn(async () => ({}));
+    const gmailApi = {
+      users: {
+        drafts: {
+          create: vi.fn().mockResolvedValue({
+            data: { id: 'gmail-draft-2' },
+          }),
+        },
+      },
+    };
+    const readFileFn = vi.fn(async () => Buffer.from('fake-pdf-content'));
+
+    const service = createGmailIntegrationService(
+      {
+        getResumeById: vi.fn(async () => ({
+          id: 'resume-1',
+          label: 'Backend CV EN',
+          filePath: 'storage/resumes/backend-cv-en.pdf',
+          metadata: {
+            originalFileName: 'Bryan-Marquez-Backend-CV.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 2048,
+          },
+        })),
+        saveEmailDraft,
+      },
+      {
+        record: recordAudit,
+      },
+      {
+        async createPreview() {
+          return {
+            jobId: 'job-attach-1',
+            jobTitle: 'Backend Developer',
+            company: 'Acme Labs',
+            sourceUrl: 'https://example.com/job-attach-1',
+            matchStatus: 'APPROVED',
+            score: 90,
+            status: 'READY',
+            recipient: 'jobs@acmelabs.com',
+            subject: 'Application for Backend Developer - Bryan Marquez',
+            body: 'Hello,\n\nI am interested in the Backend Developer role.\n\nBest regards,\nBryan Marquez',
+            generation: { mode: 'deterministic', warnings: [] },
+            blockedReasons: [],
+            approvalsRequired: [],
+            selectedResume: {
+              id: 'resume-1',
+              label: 'Backend CV EN',
+              originalFileName: 'Bryan-Marquez-Backend-CV.pdf',
+            },
+            approvalRequests: [],
+            pendingApprovalRequests: [],
+            rejectedApprovalRequests: [],
+          };
+        },
+      },
+      {
+        config: {
+          GOOGLE_CLIENT_ID: 'client-id',
+          GOOGLE_CLIENT_SECRET: 'client-secret',
+          GOOGLE_REDIRECT_URI: 'http://localhost:4300/api/v1/integrations/gmail/callback',
+          GOOGLE_GMAIL_LABEL: 'Postulaciones/Por revisar',
+          GOOGLE_GMAIL_ALERT_QUERY: 'job alert',
+          GOOGLE_GMAIL_MAX_RESULTS: 10,
+          GOOGLE_TOKEN_PATH: 'storage/tokens/test.json.enc',
+          ENCRYPTION_KEY: 'a'.repeat(64),
+        },
+        tokenStore: {
+          async read() {
+            return {
+              tokens: { access_token: 'token' },
+              emailAddress: 'bryanamg181@gmail.com',
+              labelId: 'Label_1',
+              labelName: 'Postulaciones/Por revisar',
+            };
+          },
+          async write() {},
+          async delete() {},
+        },
+        oauthClientFactory: () => ({
+          setCredentials() {},
+        }),
+        gmailApiFactory: () => gmailApi,
+        readFileFn,
+      },
+    );
+
+    const payload = await service.createDraftFromJob('job-attach-1');
+
+    expect(readFileFn).toHaveBeenCalledTimes(1);
+    expect(payload.attachmentStatus).toBe('ATTACHED');
+    expect(payload.attachedResume).toEqual({
+      id: 'resume-1',
+      label: 'Backend CV EN',
+      originalFileName: 'Bryan-Marquez-Backend-CV.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 2048,
+    });
+    expect(payload.warnings).toContain(
+      'Attached CV automatically: Backend CV EN (Bryan-Marquez-Backend-CV.pdf).',
+    );
+    expect(gmailApi.users.drafts.create).toHaveBeenCalledTimes(1);
+    expect(saveEmailDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          attachedResume: expect.objectContaining({
+            id: 'resume-1',
+          }),
+        }),
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith('gmail.draft_created', 'job_offer', 'job-attach-1', {
+      draftExternalId: 'gmail-draft-2',
+      recipient: 'jobs@acmelabs.com',
+      attachmentStatus: 'ATTACHED',
+      attachedResumeId: 'resume-1',
+    });
   });
 
   it('blocks draft creation when there are unresolved sensitive approval requests', async () => {

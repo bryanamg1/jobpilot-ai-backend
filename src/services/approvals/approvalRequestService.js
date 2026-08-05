@@ -67,8 +67,9 @@ export function createApprovalRequestService(repository, auditService) {
       return created;
     },
 
-    async listRequests() {
-      return repository.listApprovalRequests();
+    async listRequests(filters = {}) {
+      const approvals = await repository.listApprovalRequests(filters);
+      return approvals.filter((entry) => matchesApprovalFilters(entry, filters));
     },
 
     async listRequestsForJob(jobId) {
@@ -108,6 +109,44 @@ export function createApprovalRequestService(repository, auditService) {
       };
     },
   };
+}
+
+function matchesApprovalFilters(entry, filters) {
+  if (filters.entityId && entry.entityId !== filters.entityId) {
+    return false;
+  }
+
+  if (filters.entityType && entry.entityType !== filters.entityType) {
+    return false;
+  }
+
+  if (filters.approvalKind && entry.approvalKind !== filters.approvalKind) {
+    return false;
+  }
+
+  if (filters.status && entry.status !== filters.status) {
+    return false;
+  }
+
+  if (filters.search) {
+    const searchableText = [
+      entry.approvalKind,
+      entry.payload?.jobTitle,
+      entry.payload?.company,
+      entry.payload?.reason,
+      entry.payload?.sourceUrl,
+      entry.payload?.note,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    if (!searchableText.includes(String(filters.search).trim().toLowerCase())) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 async function updateRequestDecision(repository, auditService, requestId, note, nextStatus) {

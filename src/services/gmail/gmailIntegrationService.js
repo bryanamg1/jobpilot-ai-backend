@@ -1,8 +1,10 @@
 import path from 'node:path';
 import { randomUUID, createHmac } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { google } from 'googleapis';
 import { env } from '../../config/env.js';
 import { HttpError } from '../../lib/httpError.js';
+import { retryOperation } from '../../lib/retry.js';
 import { createSealedJsonStore } from '../../lib/sealedJsonStore.js';
 
 const GMAIL_SCOPES = [
@@ -22,6 +24,8 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
   const oauthClientFactory =
     options.oauthClientFactory ?? (() => createOAuthClient(config));
   const gmailApiFactory = options.gmailApiFactory ?? ((auth) => google.gmail({ version: 'v1', auth }));
+  const readFileFn = options.readFileFn ?? readFile;
+  const breaker = options.breaker ?? null;
 
   return {
     async getStatus() {
@@ -70,12 +74,20 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
       verifyState(state, config.ENCRYPTION_KEY ?? 'jobpilot-local-key');
 
       const oauthClient = oauthClientFactory();
-      const { tokens } = await oauthClient.getToken(code);
+      const { tokens } = await executeProviderCall(
+        breaker,
+        config,
+        () => oauthClient.getToken(code),
+      );
       oauthClient.setCredentials(tokens);
 
       const gmail = gmailApiFactory(oauthClient);
-      const profile = await gmail.users.getProfile({ userId: 'me' });
-      const labelId = await ensureLabel(gmail, config.GOOGLE_GMAIL_LABEL);
+      const profile = await executeProviderCall(
+        breaker,
+        config,
+        () => gmail.users.getProfile({ userId: 'me' }),
+      );
+      const labelId = await ensureLabel(gmail, config.GOOGLE_GMAIL_LABEL, breaker, config);
 
       await tokenStore.write({
         tokens,
@@ -108,20 +120,30 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
       const query = queryInput || config.GOOGLE_GMAIL_ALERT_QUERY;
       const maxResults = maxResultsInput ?? config.GOOGLE_GMAIL_MAX_RESULTS;
 
-      const listResponse = await gmail.users.messages.list({
-        userId: 'me',
-        q: query,
-        maxResults,
-      });
+      const listResponse = await executeProviderCall(
+        breaker,
+        config,
+        () =>
+          gmail.users.messages.list({
+            userId: 'me',
+            q: query,
+            maxResults,
+          }),
+      );
 
       const messages = await Promise.all(
         (listResponse.data.messages ?? []).map(async (message) => {
-          const detail = await gmail.users.messages.get({
-            userId: 'me',
-            id: message.id,
-            format: 'metadata',
-            metadataHeaders: ['From', 'Subject', 'Date'],
-          });
+          const detail = await executeProviderCall(
+            breaker,
+            config,
+            () =>
+              gmail.users.messages.get({
+                userId: 'me',
+                id: message.id,
+                format: 'metadata',
+                metadataHeaders: ['From', 'Subject', 'Date'],
+              }),
+          );
 
           const headers = new Map(
             (detail.data.payload?.headers ?? []).map((header) => [header.name, header.value ?? '']),
@@ -175,15 +197,21 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
         });
       }
 
-      const mimeMessage = buildMimeMessage(preview);
-      const response = await gmail.users.drafts.create({
-        userId: 'me',
-        requestBody: {
-          message: {
-            raw: Buffer.from(mimeMessage).toString('base64url'),
-          },
-        },
-      });
+      const attachment = await resolveDraftAttachment(repository, preview, readFileFn);
+      const mimeMessage = buildMimeMessage(preview, attachment);
+      const response = await executeProviderCall(
+        breaker,
+        config,
+        () =>
+          gmail.users.drafts.create({
+            userId: 'me',
+            requestBody: {
+              message: {
+                raw: Buffer.from(mimeMessage).toString('base64url'),
+              },
+            },
+          }),
+      );
 
       const record = {
         id: randomUUID(),
@@ -202,8 +230,10 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
           generationMode: preview.generation.mode,
           warnings: [
             ...preview.generation.warnings,
-            preview.selectedResume
-              ? `Attach the selected CV manually before sending: ${preview.selectedResume.label} (${preview.selectedResume.originalFileName}).`
+            attachment
+              ? `Attached CV automatically: ${attachment.label} (${attachment.originalFileName}).`
+              : preview.selectedResume
+                ? `The selected CV could not be attached automatically. Verify it manually before sending: ${preview.selectedResume.label} (${preview.selectedResume.originalFileName}).`
               : 'No CV is selected for this job yet. Attach the correct CV manually before sending.',
             ...(preview.approvalRequests ?? []).map(
               (item) => `Approval ${item.approvalKind}: ${item.status}`,
@@ -211,6 +241,15 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
             DRAFT_LABEL_NOTE,
           ],
           selectedResume: preview.selectedResume,
+          attachedResume: attachment
+            ? {
+                id: attachment.id,
+                label: attachment.label,
+                originalFileName: attachment.originalFileName,
+                mimeType: attachment.mimeType,
+                sizeBytes: attachment.sizeBytes,
+              }
+            : null,
           approvalRequests: preview.approvalRequests ?? [],
           labelName: session.labelName ?? config.GOOGLE_GMAIL_LABEL,
           labelId: session.labelId ?? null,
@@ -221,6 +260,8 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
       await auditService.record('gmail.draft_created', 'job_offer', jobId, {
         draftExternalId: record.draftExternalId,
         recipient: record.toEmail,
+        attachmentStatus: attachment ? 'ATTACHED' : 'MANUAL_REQUIRED',
+        attachedResumeId: attachment?.id ?? null,
       });
 
       return {
@@ -230,8 +271,9 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
         provider: record.provider,
         labelName: config.GOOGLE_GMAIL_LABEL,
         draftLabelNote: DRAFT_LABEL_NOTE,
-        attachmentStatus: 'MANUAL_REQUIRED',
+        attachmentStatus: attachment ? 'ATTACHED' : 'MANUAL_REQUIRED',
         selectedResume: preview.selectedResume,
+        attachedResume: record.metadata.attachedResume,
         approvalRequests: preview.approvalRequests ?? [],
         warnings: record.metadata.warnings,
       };
@@ -279,21 +321,30 @@ async function getAuthenticatedClients(config, tokenStore, oauthClientFactory, g
   };
 }
 
-async function ensureLabel(gmail, labelName) {
-  const listResponse = await gmail.users.labels.list({ userId: 'me' });
+async function ensureLabel(gmail, labelName, breaker, config) {
+  const listResponse = await executeProviderCall(
+    breaker,
+    config,
+    () => gmail.users.labels.list({ userId: 'me' }),
+  );
   const existing = (listResponse.data.labels ?? []).find((label) => label.name === labelName);
   if (existing?.id) {
     return existing.id;
   }
 
-  const createResponse = await gmail.users.labels.create({
-    userId: 'me',
-    requestBody: {
-      name: labelName,
-      labelListVisibility: 'labelShow',
-      messageListVisibility: 'show',
-    },
-  });
+  const createResponse = await executeProviderCall(
+    breaker,
+    config,
+    () =>
+      gmail.users.labels.create({
+        userId: 'me',
+        requestBody: {
+          name: labelName,
+          labelListVisibility: 'labelShow',
+          messageListVisibility: 'show',
+        },
+      }),
+  );
 
   return createResponse.data.id ?? null;
 }
@@ -320,7 +371,67 @@ function verifyState(state, secret) {
   return payload;
 }
 
-function buildMimeMessage(preview) {
+async function resolveDraftAttachment(repository, preview, readFileFn) {
+  if (!preview.selectedResume?.id || typeof repository.getResumeById !== 'function') {
+    return null;
+  }
+
+  const resume = await repository.getResumeById(preview.selectedResume.id);
+  if (!resume?.filePath || !resume?.metadata?.originalFileName || !resume?.metadata?.mimeType) {
+    return null;
+  }
+
+  try {
+    const absolutePath = path.resolve(process.cwd(), resume.filePath);
+    const content = await readFileFn(absolutePath);
+
+    return {
+      id: resume.id,
+      label: resume.label,
+      originalFileName: resume.metadata.originalFileName,
+      mimeType: resume.metadata.mimeType,
+      sizeBytes: resume.metadata.sizeBytes,
+      contentBase64: wrapBase64(Buffer.from(content).toString('base64')),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildMimeMessage(preview, attachment) {
+  if (!attachment) {
+    return buildTextOnlyMimeMessage(preview);
+  }
+
+  const boundary = `jobpilot-boundary-${randomUUID()}`;
+
+  return [
+    `To: ${preview.recipient}`,
+    `Subject: ${sanitizeHeader(preview.subject)}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    preview.body,
+    '',
+    `Original source: ${preview.sourceUrl ?? 'N/A'}`,
+    `Compatibility score: ${preview.score}`,
+    `Internal reference: ${preview.jobId}`,
+    '',
+    `--${boundary}`,
+    `Content-Type: ${attachment.mimeType}; name="${sanitizeHeader(attachment.originalFileName)}"`,
+    `Content-Disposition: attachment; filename="${sanitizeHeader(attachment.originalFileName)}"`,
+    'Content-Transfer-Encoding: base64',
+    '',
+    attachment.contentBase64,
+    `--${boundary}--`,
+  ].join('\r\n');
+}
+
+function buildTextOnlyMimeMessage(preview) {
   return [
     `To: ${preview.recipient}`,
     `Subject: ${sanitizeHeader(preview.subject)}`,
@@ -335,6 +446,24 @@ function buildMimeMessage(preview) {
   ].join('\r\n');
 }
 
+function wrapBase64(value) {
+  return String(value).match(/.{1,76}/gu)?.join('\r\n') ?? '';
+}
+
 function sanitizeHeader(value) {
   return String(value).replace(/\r?\n/g, ' ').trim();
+}
+
+async function executeProviderCall(breaker, config, operation) {
+  const runner = () =>
+    retryOperation(operation, {
+      attempts: config.EXTERNAL_RETRY_ATTEMPTS,
+      baseDelayMs: config.isTest ? 0 : config.EXTERNAL_RETRY_BASE_DELAY_MS,
+    });
+
+  if (!breaker) {
+    return runner();
+  }
+
+  return breaker.execute(runner);
 }

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../lib/asyncHandler.js';
+import { approvalRequestListQuerySchema } from '../../schemas/approvalRequestQuerySchemas.js';
 import {
   approvalRequestDecisionInputSchema,
   approvalRequestDecisionParamsSchema,
@@ -10,8 +11,9 @@ export function createApprovalsRouter({ approvalRequestService }) {
 
   router.get(
     '/',
-    asyncHandler(async (_req, res) => {
-      const approvals = await approvalRequestService.listRequests();
+    asyncHandler(async (req, res) => {
+      const filters = approvalRequestListQuerySchema.parse(req.query);
+      const approvals = await approvalRequestService.listRequests(filters);
       res.json({ data: approvals });
     }),
   );

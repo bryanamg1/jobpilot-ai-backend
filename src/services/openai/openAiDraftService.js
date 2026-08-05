@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { env } from '../../config/env.js';
 import { CERTAINTY } from '../../constants/certainty.js';
+import { retryOperation } from '../../lib/retry.js';
 import { aiDraftPreviewSchema } from '../../schemas/aiDraftSchemas.js';
 
 const SYSTEM_PROMPT = `
@@ -20,6 +21,7 @@ Rules:
 export function createOpenAiDraftService(options = {}) {
   const config = options.config ?? env;
   const client = options.client ?? createClient(config);
+  const breaker = options.breaker ?? null;
 
   return {
     async generateDraft(jobAnalysis) {
@@ -38,31 +40,42 @@ export function createOpenAiDraftService(options = {}) {
       }
 
       try {
-        const response = await client.responses.parse({
-          model: config.OPENAI_MODEL,
-          reasoning: {
-            effort: config.OPENAI_REASONING_EFFORT,
-          },
-          text: {
-            verbosity: config.OPENAI_TEXT_VERBOSITY,
-            format: zodTextFormat(aiDraftPreviewSchema, 'job_application_draft_preview'),
-          },
-          input: [
-            {
-              role: 'system',
-              content: [{ type: 'input_text', text: SYSTEM_PROMPT }],
-            },
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'input_text',
-                  text: buildPrompt(jobAnalysis, fallback),
-                },
-              ],
-            },
-          ],
-        });
+        const response = await executeProviderCall(
+          breaker,
+          () =>
+            retryOperation(
+              () =>
+                client.responses.parse({
+                  model: config.OPENAI_MODEL,
+                  reasoning: {
+                    effort: config.OPENAI_REASONING_EFFORT,
+                  },
+                  text: {
+                    verbosity: config.OPENAI_TEXT_VERBOSITY,
+                    format: zodTextFormat(aiDraftPreviewSchema, 'job_application_draft_preview'),
+                  },
+                  input: [
+                    {
+                      role: 'system',
+                      content: [{ type: 'input_text', text: SYSTEM_PROMPT }],
+                    },
+                    {
+                      role: 'user',
+                      content: [
+                        {
+                          type: 'input_text',
+                          text: buildPrompt(jobAnalysis, fallback),
+                        },
+                      ],
+                    },
+                  ],
+                }),
+              {
+                attempts: config.EXTERNAL_RETRY_ATTEMPTS,
+                baseDelayMs: config.isTest ? 0 : config.EXTERNAL_RETRY_BASE_DELAY_MS,
+              },
+            ),
+        );
 
         const parsed = response.output_parsed;
         if (!parsed) {
@@ -98,6 +111,14 @@ export function createOpenAiDraftService(options = {}) {
       }
     },
   };
+}
+
+async function executeProviderCall(breaker, operation) {
+  if (!breaker) {
+    return operation();
+  }
+
+  return breaker.execute(operation);
 }
 
 function createClient(config) {

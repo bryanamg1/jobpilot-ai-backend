@@ -22,8 +22,29 @@ export function createMemoryRepository() {
       runtime.resumes.push(structuredClone(record));
       return record;
     },
-    async listApprovalRequests() {
-      return runtime.approvalRequests.toSorted(compareApprovalRequests);
+    async listBrowserSessions() {
+      return runtime.browserSessions.toSorted(compareBrowserSessions);
+    },
+    async getBrowserSessionById(sessionId) {
+      return runtime.browserSessions.find((entry) => entry.id === sessionId) ?? null;
+    },
+    async saveBrowserSession(record) {
+      runtime.browserSessions.push(structuredClone(record));
+      return record;
+    },
+    async updateBrowserSession(record) {
+      const index = runtime.browserSessions.findIndex((entry) => entry.id === record.id);
+      if (index === -1) {
+        return null;
+      }
+      runtime.browserSessions[index] = structuredClone(record);
+      return runtime.browserSessions[index];
+    },
+    async listApprovalRequests(filters = {}) {
+      return runtime.approvalRequests
+        .filter((entry) => matchApprovalRequestFilters(entry, filters))
+        .toSorted(compareApprovalRequests)
+        .slice(0, filters.limit ?? 200);
     },
     async listApprovalRequestsByEntity(entityType, entityId) {
       return runtime.approvalRequests
@@ -84,6 +105,12 @@ export function createMemoryRepository() {
       runtime.audits.push(event);
       return event;
     },
+    async listAuditEvents(filters = {}) {
+      return runtime.audits
+        .filter((entry) => matchAuditEventFilters(entry, filters))
+        .toSorted((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
+        .slice(0, filters.limit ?? 50);
+    },
     async getDashboardSummary() {
       const offers = await this.listJobAnalyses();
       const metrics = offers.reduce(
@@ -121,6 +148,42 @@ export function createMemoryRepository() {
   };
 }
 
+function matchApprovalRequestFilters(entry, filters) {
+  if (filters.entityId && entry.entityId !== filters.entityId) {
+    return false;
+  }
+
+  if (filters.entityType && entry.entityType !== filters.entityType) {
+    return false;
+  }
+
+  if (filters.approvalKind && entry.approvalKind !== filters.approvalKind) {
+    return false;
+  }
+
+  if (filters.status && entry.status !== filters.status) {
+    return false;
+  }
+
+  return true;
+}
+
+function matchAuditEventFilters(entry, filters) {
+  if (filters.entityType && entry.entityType !== filters.entityType) {
+    return false;
+  }
+
+  if (filters.entityId && entry.entityId !== filters.entityId) {
+    return false;
+  }
+
+  if (filters.eventName && entry.eventName !== filters.eventName) {
+    return false;
+  }
+
+  return true;
+}
+
 function compareApprovalRequests(left, right) {
   const statusRank = statusPriority(left.status) - statusPriority(right.status);
   if (statusRank !== 0) {
@@ -128,6 +191,28 @@ function compareApprovalRequests(left, right) {
   }
 
   return right.updatedAt.localeCompare(left.updatedAt);
+}
+
+function compareBrowserSessions(left, right) {
+  const statusRank = browserSessionStatusPriority(left.status) - browserSessionStatusPriority(right.status);
+  if (statusRank !== 0) {
+    return statusRank;
+  }
+
+  return String(right.updatedAt).localeCompare(String(left.updatedAt));
+}
+
+function browserSessionStatusPriority(status) {
+  if (status === 'ACTIVE') {
+    return 0;
+  }
+  if (status === 'ATTENTION_REQUIRED') {
+    return 1;
+  }
+  if (status === 'ERROR') {
+    return 2;
+  }
+  return 3;
 }
 
 function statusPriority(status) {

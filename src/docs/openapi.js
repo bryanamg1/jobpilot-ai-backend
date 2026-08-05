@@ -7,7 +7,7 @@ export const openApiDocument = {
   paths: {
     '/api/v1/health': {
       get: {
-        summary: 'Health check',
+        summary: 'Operational health check with storage, queue, integration and circuit-breaker status',
         responses: {
           200: {
             description: 'Service status',
@@ -18,6 +18,45 @@ export const openApiDocument = {
     '/api/v1/approvals': {
       get: {
         summary: 'List sensitive approval requests for manual review',
+      },
+    },
+    '/api/v1/audits': {
+      get: {
+        summary: 'List recent audit events, optionally filtered by entity',
+      },
+    },
+    '/api/v1/browser-sessions': {
+      get: {
+        summary: 'List supervised browser sessions',
+      },
+      post: {
+        summary: 'Start a new supervised LinkedIn browser session for Jobs, Feed or post-search',
+      },
+    },
+    '/api/v1/browser-sessions/{sessionId}': {
+      get: {
+        summary: 'Get a supervised browser session',
+      },
+    },
+    '/api/v1/browser-sessions/{sessionId}/refresh': {
+      post: {
+        summary: 'Refresh the current supervised browser snapshot',
+      },
+    },
+    '/api/v1/browser-sessions/{sessionId}/navigate': {
+      post: {
+        summary: 'Navigate a supervised browser session to another LinkedIn URL',
+      },
+    },
+    '/api/v1/browser-sessions/{sessionId}/capture-job': {
+      post: {
+        summary:
+          'Capture the visible LinkedIn Jobs offer or hiring publication from a supervised session into the intake pipeline',
+      },
+    },
+    '/api/v1/browser-sessions/{sessionId}/close': {
+      post: {
+        summary: 'Close a supervised browser session',
       },
     },
     '/api/v1/approvals/{requestId}/approve': {

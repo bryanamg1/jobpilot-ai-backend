@@ -5,13 +5,16 @@ export function notFoundHandler(_req, _res, next) {
   next(new HttpError(404, 'Resource not found'));
 }
 
-export function errorHandler(error, req, res) {
+export function errorHandler(error, req, res, next) {
+  void next;
+
   if (error instanceof ZodError) {
     return res.status(400).json({
-      error: 'ValidationError',
-      message: 'Invalid request payload',
+      success: false,
+      code: 'VALIDATION_ERROR',
+      message: 'Los datos enviados no son válidos.',
+      errors: formatZodErrors(error),
       requestId: req.requestId,
-      details: error.flatten(),
     });
   }
 
@@ -29,4 +32,11 @@ export function errorHandler(error, req, res) {
     message: 'Unexpected server error',
     requestId: req.requestId,
   });
+}
+
+function formatZodErrors(error) {
+  return error.issues.map((issue) => ({
+    field: issue.path.join('.') || 'root',
+    message: issue.message,
+  }));
 }
