@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
+import { defaultCandidateProfile } from '../../src/config/candidateProfileSeed.js';
 import { getInMemoryRuntime } from '../../src/repositories/inMemory/inMemoryRuntime.js';
 import { resetRepositoryForTests } from '../../src/repositories/repositoryFactory.js';
 
@@ -8,7 +9,7 @@ describe('profile routes', () => {
   beforeEach(() => {
     resetRepositoryForTests();
     const runtime = getInMemoryRuntime();
-    runtime.profile = structuredClone(runtime.profile);
+    runtime.profile = structuredClone(defaultCandidateProfile);
     runtime.offers = [];
     runtime.audits = [];
   });
@@ -59,5 +60,6 @@ describe('profile routes', () => {
     const readResponse = await request(app).get('/api/v1/profile');
     expect(readResponse.body.data.technologies).toEqual(['Node.js', 'Express', 'MySQL']);
     expect(readResponse.body.data.facts.some((fact) => fact.value === 'Automation')).toBe(true);
+    expect(readResponse.body.data.answerLibrary.length).toBeGreaterThan(0);
   });
 });
