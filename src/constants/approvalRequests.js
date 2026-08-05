@@ -1,0 +1,25 @@
+export const APPROVAL_REQUEST_STATUS = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+};
+
+export const APPROVAL_REQUEST_KIND = {
+  SALARY_EXPECTATION: 'salaryExpectation',
+  ENGLISH_LEVEL: 'englishLevel',
+  WORK_AUTHORIZATION: 'workAuthorization',
+  RELOCATION: 'relocation',
+  TRAVEL: 'travel',
+  AVAILABILITY: 'availability',
+};
+
+export const GUARDRail_FIELD_TO_APPROVAL_KIND = {
+  salary: APPROVAL_REQUEST_KIND.SALARY_EXPECTATION,
+  englishLevel: APPROVAL_REQUEST_KIND.ENGLISH_LEVEL,
+  workAuthorization: APPROVAL_REQUEST_KIND.WORK_AUTHORIZATION,
+  relocation: APPROVAL_REQUEST_KIND.RELOCATION,
+  travel: APPROVAL_REQUEST_KIND.TRAVEL,
+  availabilityImmediate: APPROVAL_REQUEST_KIND.AVAILABILITY,
+};
+
+export const SUPPORTED_APPROVAL_KINDS = new Set(Object.values(APPROVAL_REQUEST_KIND));

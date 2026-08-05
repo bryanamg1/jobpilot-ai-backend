@@ -1,0 +1,14 @@
+node_modules
+coverage
+dist
+.git
+.env
+.env.*
+!.env.example
+storage
+logs
+tmp
+tests
+.codex
+.agents
+npm-debug.log*

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { buildOfferFingerprint } from '../../lib/fingerprint.js';
 import { HttpError } from '../../lib/httpError.js';
+import { createApprovalRequestService } from '../approvals/approvalRequestService.js';
 import { evaluateGuardrails } from '../guardrails/guardrailService.js';
 import { matchJobOffer } from '../matching/matchJobOffer.js';
 import { normalizeTechnology, parseManualJob } from '../manualIntake/manualJobParser.js';
@@ -9,6 +10,8 @@ import { createOpenAiEnrichmentService } from '../openai/openAiEnrichmentService
 export function createJobOfferService(repository, auditService, options = {}) {
   const openAiEnrichmentService =
     options.openAiEnrichmentService ?? createOpenAiEnrichmentService();
+  const approvalRequestService =
+    options.approvalRequestService ?? createApprovalRequestService(repository, auditService);
 
   return {
     async createFromManualInput(input) {
@@ -70,6 +73,7 @@ export function createJobOfferService(repository, auditService, options = {}) {
       };
 
       const saved = await repository.saveJobAnalysis(record);
+      await approvalRequestService.syncForJob(saved);
       await auditService.record('job_offer.created_manual', 'job_offer', saved.id, {
         source: saved.source.type,
         status: saved.match.status,
@@ -81,6 +85,13 @@ export function createJobOfferService(repository, auditService, options = {}) {
     },
     async list() {
       return repository.listJobAnalyses();
+    },
+    async getById(jobId) {
+      return repository.getJobAnalysisById(jobId);
+    },
+    async listAwaitingApproval() {
+      const jobs = await repository.listJobAnalyses();
+      return jobs.filter((job) => job.match.status === 'AWAITING_APPROVAL');
     },
   };
 }
