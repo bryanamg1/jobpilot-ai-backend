@@ -15,6 +15,9 @@ export function createMemoryRepository() {
     async listJobAnalyses() {
       return runtime.offers.toSorted((left, right) => right.createdAt.localeCompare(left.createdAt));
     },
+    async getJobAnalysisById(jobId) {
+      return runtime.offers.find((entry) => entry.id === jobId) ?? null;
+    },
     async findByFingerprint(fingerprint) {
       return runtime.offers.find((entry) => entry.fingerprint === fingerprint) ?? null;
     },

@@ -109,4 +109,43 @@ describe('jobs routes', () => {
     expect(createResponse.body.data.jobOffer.technologies).toContain('Redis');
     expect(createResponse.body.data.jobOffer.analysisSummary).toContain('Remote backend role');
   });
+
+  it('generates a reviewable draft preview for a compatible analyzed job', async () => {
+    const app = buildApp();
+
+    const createResponse = await request(app).post('/api/v1/jobs/manual').send({
+      rawText: fixture('manual-job-spanish.txt'),
+      sourceUrl: 'https://example.com/backend-job-preview',
+      sourceLabel: 'Manual preview',
+    });
+
+    const previewResponse = await request(app)
+      .post(`/api/v1/jobs/${createResponse.body.data.id}/draft-preview`)
+      .send({});
+
+    expect(previewResponse.status).toBe(200);
+    expect(previewResponse.body.data.status).toBe('REVIEW_REQUIRED');
+    expect(previewResponse.body.data.subject).toContain('Backend Developer');
+    expect(previewResponse.body.data.body).toContain('Bryan Marquez');
+    expect(previewResponse.body.data.generation.mode).toBe('deterministic');
+  });
+
+  it('blocks draft preview generation when the offer is rejected by rules', async () => {
+    const app = buildApp();
+
+    const createResponse = await request(app).post('/api/v1/jobs/manual').send({
+      rawText: fixture('manual-job-incompatible.txt'),
+      sourceUrl: 'https://example.com/wordpress-job-preview',
+      sourceLabel: 'Manual preview',
+    });
+
+    const previewResponse = await request(app)
+      .post(`/api/v1/jobs/${createResponse.body.data.id}/draft-preview`)
+      .send({});
+
+    expect(previewResponse.status).toBe(200);
+    expect(previewResponse.body.data.status).toBe('BLOCKED');
+    expect(previewResponse.body.data.subject).toBeNull();
+    expect(previewResponse.body.data.blockedReasons.length).toBeGreaterThan(0);
+  });
 });

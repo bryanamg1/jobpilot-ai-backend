@@ -24,6 +24,10 @@ export function createOpenAiEnrichmentService(options = {}) {
 
   return {
     async enrichManualJob(input, deterministicParse) {
+      if (config.isTest) {
+        return disabledResult('test_mode', 'OpenAI enrichment is disabled during automated tests');
+      }
+
       if (config.OPENAI_FEATURE_MODE === 'disabled') {
         return disabledResult('disabled', 'OpenAI enrichment is disabled');
       }
@@ -90,7 +94,7 @@ export function createOpenAiEnrichmentService(options = {}) {
 }
 
 function createClient(config) {
-  if (config.OPENAI_FEATURE_MODE === 'disabled' || !config.OPENAI_API_KEY) {
+  if (config.isTest || config.OPENAI_FEATURE_MODE === 'disabled' || !config.OPENAI_API_KEY) {
     return null;
   }
 

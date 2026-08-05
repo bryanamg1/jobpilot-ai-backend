@@ -25,6 +25,11 @@ export const openApiDocument = {
         summary: 'List analyzed job offers',
       },
     },
+    '/api/v1/jobs/{jobId}/draft-preview': {
+      post: {
+        summary: 'Generate a safe application draft preview for an analyzed job',
+      },
+    },
     '/api/v1/dashboard': {
       get: {
         summary: 'Dashboard summary',
