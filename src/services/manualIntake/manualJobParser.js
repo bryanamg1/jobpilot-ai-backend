@@ -42,6 +42,7 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel }) {
     extractField(lines, ['empresa', 'company']) ||
     extractCompanyFromSentence(lines[0]) ||
     'Unknown company';
+  const location = extractField(lines, ['ubicacion', 'ubicación', 'location']);
   const recruiterEmail = extractEmail(rawText);
   const technologies = technologyDictionary
     .filter((term) => lowerText.includes(term))
@@ -64,7 +65,7 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel }) {
       title,
       company,
       recruiterEmail,
-      location: extractField(lines, ['ubicacion', 'location']) || null,
+      location: location || null,
       modality,
       salary,
       seniority,
@@ -73,8 +74,42 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel }) {
       requirements,
       instructions: extractInstructions(lines),
       certaintyMap: [
-        certaintyFact('title', title, CERTAINTY.INFERRED, 'manual_text_first_line'),
-        certaintyFact('company', company, company === 'Unknown company' ? CERTAINTY.UNKNOWN : CERTAINTY.INFERRED, 'manual_text'),
+        certaintyFact(
+          'title',
+          title,
+          title === 'Unknown role' ? CERTAINTY.UNKNOWN : CERTAINTY.INFERRED,
+          'manual_text_first_line',
+        ),
+        certaintyFact(
+          'company',
+          company,
+          company === 'Unknown company' ? CERTAINTY.UNKNOWN : CERTAINTY.INFERRED,
+          'manual_text',
+        ),
+        certaintyFact(
+          'location',
+          location,
+          location ? CERTAINTY.INFERRED : CERTAINTY.UNKNOWN,
+          'manual_text',
+        ),
+        certaintyFact(
+          'modality',
+          modality.join(', '),
+          modality.length ? CERTAINTY.INFERRED : CERTAINTY.UNKNOWN,
+          'manual_text_keyword',
+        ),
+        certaintyFact(
+          'seniority',
+          seniority,
+          seniority === 'unknown' ? CERTAINTY.UNKNOWN : CERTAINTY.INFERRED,
+          'manual_text_keyword',
+        ),
+        certaintyFact(
+          'englishRequirement',
+          englishRequirement,
+          englishRequirement === 'unknown' ? CERTAINTY.UNKNOWN : CERTAINTY.INFERRED,
+          'manual_text_keyword',
+        ),
         certaintyFact(
           'recruiterEmail',
           recruiterEmail,
@@ -116,7 +151,7 @@ function extractEmail(text) {
   return match ? match[0].toLowerCase() : null;
 }
 
-function normalizeTechnology(term) {
+export function normalizeTechnology(term) {
   const mapping = {
     javascript: 'JavaScript',
     typescript: 'TypeScript',
@@ -139,7 +174,7 @@ function normalizeTechnology(term) {
     terraform: 'Terraform',
     figma: 'Figma',
   };
-  return mapping[term] ?? term;
+  return mapping[term.toLowerCase()] ?? term;
 }
 
 function extractSeniority(text) {
@@ -209,6 +244,9 @@ function extractFlags(text) {
     asksForSalary: /(salary expectation|pretension salarial|salary expectations)/i.test(text),
     legalQuestions: /(authorized to work|background check|drug test)/i.test(text),
     visibleContactCallToAction: /(hiring|send your resume|enviar cv|oportunidad laboral|estamos buscando)/i.test(text),
+    requiresRelocation: /(relocation|relocate|reubicación)/i.test(text),
+    requiresTravel: /(travel required|ability to travel|viajes?|travel occasionally)/i.test(text),
+    requiresImmediateAvailability: /(immediate availability|join immediately|available asap|incorporación inmediata)/i.test(text),
   };
 }
 

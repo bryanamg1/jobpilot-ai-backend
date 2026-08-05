@@ -17,7 +17,11 @@ const envSchema = z.object({
   MYSQL_SSL: z.string().default('false'),
   REDIS_URL: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
-  OPENAI_MODEL: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-5.6-terra'),
+  OPENAI_FEATURE_MODE: z.enum(['disabled', 'assist']).default('disabled'),
+  OPENAI_REASONING_EFFORT: z.enum(['none', 'low', 'medium', 'high', 'xhigh', 'max']).default('low'),
+  OPENAI_TEXT_VERBOSITY: z.enum(['low', 'medium', 'high']).default('medium'),
+  OPENAI_TIMEOUT_MS: z.coerce.number().default(20_000),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_REDIRECT_URI: z.string().optional(),
@@ -31,6 +35,7 @@ export const env = {
   ...parsed,
   isTest: parsed.NODE_ENV === 'test',
   isProduction: parsed.NODE_ENV === 'production',
+  openAiConfigured: parsed.OPENAI_FEATURE_MODE === 'assist' && Boolean(parsed.OPENAI_API_KEY),
   mysqlConfigured: Boolean(
     parsed.MYSQL_HOST &&
       parsed.MYSQL_DATABASE &&

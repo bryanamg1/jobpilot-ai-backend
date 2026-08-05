@@ -3,6 +3,7 @@ import path from 'node:path';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
+import { JOB_STATUS } from '../../src/constants/jobStatus.js';
 import { getInMemoryRuntime } from '../../src/repositories/inMemory/inMemoryRuntime.js';
 import { resetRepositoryForTests } from '../../src/repositories/repositoryFactory.js';
 
@@ -28,10 +29,13 @@ describe('jobs routes', () => {
 
     expect(createResponse.status).toBe(201);
     expect(createResponse.body.data.match.score).toBeGreaterThan(0);
+    expect(createResponse.body.data.match.status).toBe(JOB_STATUS.AWAITING_APPROVAL);
+    expect(createResponse.body.data.analysis.extraction.mode).toBe('deterministic');
 
     const dashboardResponse = await request(app).get('/api/v1/dashboard');
     expect(dashboardResponse.status).toBe(200);
     expect(dashboardResponse.body.data.metrics.total).toBe(1);
+    expect(dashboardResponse.body.data.metrics.awaitingApproval).toBe(1);
   });
 
   it('rejects duplicate manual jobs', async () => {
@@ -46,5 +50,63 @@ describe('jobs routes', () => {
     const duplicateResponse = await request(app).post('/api/v1/jobs/manual').send(payload);
 
     expect(duplicateResponse.status).toBe(409);
+  });
+
+  it('merges OpenAI enrichment when the adapter is enabled', async () => {
+    const app = buildApp({
+      openAiEnrichmentService: {
+        async enrichManualJob() {
+          return {
+            applied: true,
+            mode: 'hybrid',
+            provider: 'openai',
+            model: 'gpt-5.6-terra',
+            warnings: [],
+            extracted: {
+              title: 'Backend Developer',
+              company: 'Acme Labs',
+              location: 'Remote LATAM',
+              recruiterEmail: 'jobs@acmelabs.com',
+              modality: ['remote'],
+              seniority: 'junior',
+              englishRequirement: 'basic',
+              technologies: ['Redis', 'Node.js'],
+              requirements: ['Experience with Redis queues'],
+              instructions: ['Send your resume to jobs@acmelabs.com'],
+              salary: null,
+              flags: {
+                requiresVisa: false,
+                asksForSalary: false,
+                legalQuestions: false,
+                visibleContactCallToAction: true,
+                requiresRelocation: false,
+                requiresTravel: false,
+                requiresImmediateAvailability: false,
+              },
+              certaintyMap: [
+                {
+                  field: 'technology',
+                  value: 'Redis',
+                  certainty: 'INFERRED',
+                  source: 'raw_text',
+                },
+              ],
+              summary: 'Remote backend role aligned with Node.js stack',
+            },
+          };
+        },
+      },
+    });
+
+    const createResponse = await request(app).post('/api/v1/jobs/manual').send({
+      rawText: fixture('manual-job-spanish.txt'),
+      sourceUrl: 'https://example.com/backend-job-openai',
+      sourceLabel: 'Manual test',
+    });
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.data.analysis.extraction.mode).toBe('hybrid');
+    expect(createResponse.body.data.jobOffer.technologies).toContain('Redis');
+    expect(createResponse.body.data.jobOffer.analysisSummary).toContain('Remote backend role');
   });
 });

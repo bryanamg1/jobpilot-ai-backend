@@ -34,12 +34,15 @@ export function createMemoryRepository() {
           if (entry.match.status === 'READY_TO_PREPARE') {
             accumulator.readyToPrepare += 1;
           }
+          if (entry.match.status === 'AWAITING_APPROVAL') {
+            accumulator.awaitingApproval += 1;
+          }
           if (entry.match.excludedByRules.length) {
             accumulator.blocked += 1;
           }
           return accumulator;
         },
-        { total: 0, readyToPrepare: 0, blocked: 0 },
+        { total: 0, readyToPrepare: 0, awaitingApproval: 0, blocked: 0 },
       );
 
       return {

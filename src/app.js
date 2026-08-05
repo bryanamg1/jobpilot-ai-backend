@@ -12,6 +12,7 @@ import { createAuditService } from './services/audit/auditService.js';
 import { createDashboardService } from './services/dashboard/dashboardService.js';
 import { createHealthService } from './services/health/healthService.js';
 import { createJobOfferService } from './services/jobs/jobOfferService.js';
+import { createOpenAiEnrichmentService } from './services/openai/openAiEnrichmentService.js';
 import { createProfileService } from './services/profile/profileService.js';
 import { createDashboardRouter } from './routes/v1/dashboard.routes.js';
 import { createDocsRouter } from './routes/v1/docs.routes.js';
@@ -19,13 +20,19 @@ import { createHealthRouter } from './routes/v1/health.routes.js';
 import { createJobsRouter } from './routes/v1/jobs.routes.js';
 import { createProfileRouter } from './routes/v1/profile.routes.js';
 
-export function buildApp() {
-  const repository = getRepository();
-  const auditService = createAuditService(repository);
-  const jobOfferService = createJobOfferService(repository, auditService);
-  const dashboardService = createDashboardService(repository);
-  const healthService = createHealthService(repository);
-  const profileService = createProfileService(repository, auditService);
+export function buildApp(options = {}) {
+  const repository = options.repository ?? getRepository();
+  const auditService = options.auditService ?? createAuditService(repository);
+  const openAiEnrichmentService =
+    options.openAiEnrichmentService ?? createOpenAiEnrichmentService();
+  const jobOfferService =
+    options.jobOfferService ??
+    createJobOfferService(repository, auditService, {
+      openAiEnrichmentService,
+    });
+  const dashboardService = options.dashboardService ?? createDashboardService(repository);
+  const healthService = options.healthService ?? createHealthService(repository);
+  const profileService = options.profileService ?? createProfileService(repository, auditService);
 
   const app = express();
 

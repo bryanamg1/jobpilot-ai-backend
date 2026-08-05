@@ -35,17 +35,9 @@ export function matchJobOffer(profile, parsedOffer, guardrails) {
       salaryScore,
   );
 
-  const excludedByRules = [
-    ...guardrails.blocked.map((item) => item.reason),
-    ...extractExclusionReasons(parsedOffer),
-  ];
-
+  const excludedByRules = guardrails.blocked.map((item) => item.reason);
   const recommendation = selectRecommendation(score);
-  const status = excludedByRules.length
-    ? JOB_STATUS.REJECTED_BY_RULES
-    : score >= 65
-      ? JOB_STATUS.READY_TO_PREPARE
-      : JOB_STATUS.REJECTED_BY_RULES;
+  const status = selectStatus(score, parsedOffer, guardrails, excludedByRules);
 
   return {
     score,
@@ -139,22 +131,27 @@ function computeSalaryScore(salary, salaryExpectation) {
   return salary.max >= salaryExpectation.amount ? matchingRules.weights.salary : matchingRules.weights.salary * 0.2;
 }
 
-function extractExclusionReasons(parsedOffer) {
-  const reasons = [];
-  const text = parsedOffer.source.originalText.toLowerCase();
-
-  if (/\b(3\+ years|4\+ years|5\+ years|more than 3 years)\b/i.test(text)) {
-    reasons.push('Offer requests unverified years of experience');
-  }
-  if (/\b(wordpress|php|terraform|aws)\b/i.test(text) && parsedOffer.jobOffer.requirements.length > 0) {
-    reasons.push('Offer depends on technologies that are not confirmed in the candidate profile');
-  }
-
-  return reasons;
-}
-
 function selectRecommendation(score) {
   return Object.values(matchingRules.thresholds).find(
     (threshold) => score >= threshold.min && score <= threshold.max,
   )?.recommendation;
+}
+
+function selectStatus(score, parsedOffer, guardrails, excludedByRules) {
+  if (excludedByRules.length) {
+    return JOB_STATUS.REJECTED_BY_RULES;
+  }
+
+  if (score >= 65) {
+    return guardrails.approvals.length ? JOB_STATUS.AWAITING_APPROVAL : JOB_STATUS.READY_TO_PREPARE;
+  }
+
+  if (
+    score >= 50 &&
+    (parsedOffer.jobOffer.seniority === 'junior' || parsedOffer.jobOffer.seniority === 'unknown')
+  ) {
+    return JOB_STATUS.AWAITING_APPROVAL;
+  }
+
+  return JOB_STATUS.REJECTED_BY_RULES;
 }

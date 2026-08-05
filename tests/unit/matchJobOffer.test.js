@@ -20,7 +20,8 @@ describe('matchJobOffer', () => {
     const match = matchJobOffer(defaultCandidateProfile, parsed, guardrails);
 
     expect(match.score).toBeGreaterThanOrEqual(65);
-    expect(match.status).toBe('READY_TO_PREPARE');
+    expect(match.status).toBe('AWAITING_APPROVAL');
+    expect(match.explanation.risks).toContain('Salary details are sensitive and require approval');
     expect(match.matchedTechnologies).toContain('Node.js');
   });
 

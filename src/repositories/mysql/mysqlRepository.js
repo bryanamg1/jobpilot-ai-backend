@@ -142,6 +142,7 @@ export function createMysqlRepository() {
           SELECT
             COUNT(*) AS total,
             SUM(CASE WHEN status = 'READY_TO_PREPARE' THEN 1 ELSE 0 END) AS readyToPrepare,
+            SUM(CASE WHEN status = 'AWAITING_APPROVAL' THEN 1 ELSE 0 END) AS awaitingApproval,
             SUM(CASE WHEN status = 'REJECTED_BY_RULES' THEN 1 ELSE 0 END) AS blocked
           FROM job_offers
           WHERE deleted_at IS NULL
@@ -153,6 +154,7 @@ export function createMysqlRepository() {
         metrics: {
           total: Number(metricsRows[0]?.total ?? 0),
           readyToPrepare: Number(metricsRows[0]?.readyToPrepare ?? 0),
+          awaitingApproval: Number(metricsRows[0]?.awaitingApproval ?? 0),
           blocked: Number(metricsRows[0]?.blocked ?? 0),
         },
         latest: latest.slice(0, 10),
