@@ -2,6 +2,12 @@ import { Router } from 'express';
 import { asyncHandler } from '../../lib/asyncHandler.js';
 import { gmailAlertsQuerySchema, gmailCallbackQuerySchema } from '../../schemas/gmailSchemas.js';
 
+export async function handleGmailCallbackRequest(req, res, gmailIntegrationService) {
+  const query = gmailCallbackQuerySchema.parse(req.query);
+  const payload = await gmailIntegrationService.handleCallback(query);
+  res.redirect(payload.redirectUrl);
+}
+
 export function createIntegrationsRouter({ gmailIntegrationService }) {
   const router = Router();
 
@@ -23,11 +29,7 @@ export function createIntegrationsRouter({ gmailIntegrationService }) {
 
   router.get(
     '/gmail/callback',
-    asyncHandler(async (req, res) => {
-      const query = gmailCallbackQuerySchema.parse(req.query);
-      const payload = await gmailIntegrationService.handleCallback(query);
-      res.redirect(payload.redirectUrl);
-    }),
+    asyncHandler(async (req, res) => handleGmailCallbackRequest(req, res, gmailIntegrationService)),
   );
 
   router.delete(

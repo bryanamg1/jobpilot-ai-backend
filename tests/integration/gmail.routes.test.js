@@ -110,4 +110,34 @@ describe('gmail integration routes', () => {
     expect(response.body.data.provider).toBe('GMAIL');
     expect(response.body.data.attachmentStatus).toBe('MANUAL_REQUIRED');
   });
+
+  it('accepts the legacy google callback route used by the current local redirect URI', async () => {
+    const app = buildApp({
+      gmailIntegrationService: {
+        async getStatus() {
+          return {};
+        },
+        async getAuthUrl() {
+          return { url: 'https://accounts.google.com/mock-consent' };
+        },
+        async handleCallback() {
+          return { redirectUrl: 'http://localhost:5173/?gmail=connected' };
+        },
+        async disconnect() {
+          return { disconnected: true };
+        },
+        async listAlerts() {
+          return { query: 'job alert', messages: [] };
+        },
+        async createDraftFromJob() {
+          return {};
+        },
+      },
+    });
+
+    const response = await request(app).get('/api/auth/google/callback?code=test-code&state=test-state');
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe('http://localhost:5173/?gmail=connected');
+  });
 });

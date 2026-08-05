@@ -18,6 +18,14 @@ export function createMemoryRepository() {
     async getJobAnalysisById(jobId) {
       return runtime.offers.find((entry) => entry.id === jobId) ?? null;
     },
+    async updateJobAnalysis(record) {
+      const index = runtime.offers.findIndex((entry) => entry.id === record.id);
+      if (index === -1) {
+        return null;
+      }
+      runtime.offers[index] = structuredClone(record);
+      return runtime.offers[index];
+    },
     async findByFingerprint(fingerprint) {
       return runtime.offers.find((entry) => entry.fingerprint === fingerprint) ?? null;
     },
@@ -41,10 +49,13 @@ export function createMemoryRepository() {
           if (entry.match.status === 'READY_TO_PREPARE') {
             accumulator.readyToPrepare += 1;
           }
+          if (entry.match.status === 'APPROVED') {
+            accumulator.readyToPrepare += 1;
+          }
           if (entry.match.status === 'AWAITING_APPROVAL') {
             accumulator.awaitingApproval += 1;
           }
-          if (entry.match.excludedByRules.length) {
+          if (entry.match.excludedByRules.length || entry.match.status === 'REJECTED') {
             accumulator.blocked += 1;
           }
           return accumulator;

@@ -85,6 +85,10 @@ export function createJobOfferService(repository, auditService, options = {}) {
     async getById(jobId) {
       return repository.getJobAnalysisById(jobId);
     },
+    async listAwaitingApproval() {
+      const jobs = await repository.listJobAnalyses();
+      return jobs.filter((job) => job.match.status === 'AWAITING_APPROVAL');
+    },
   };
 }
 

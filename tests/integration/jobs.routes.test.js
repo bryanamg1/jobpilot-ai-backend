@@ -148,4 +148,40 @@ describe('jobs routes', () => {
     expect(previewResponse.body.data.subject).toBeNull();
     expect(previewResponse.body.data.blockedReasons.length).toBeGreaterThan(0);
   });
+
+  it('approves a job that is awaiting human review', async () => {
+    const app = buildApp();
+
+    const createResponse = await request(app).post('/api/v1/jobs/manual').send({
+      rawText: fixture('manual-job-spanish.txt'),
+      sourceUrl: 'https://example.com/backend-job-approve',
+      sourceLabel: 'Manual approval',
+    });
+
+    const approveResponse = await request(app)
+      .post(`/api/v1/jobs/${createResponse.body.data.id}/approve`)
+      .send({ reason: 'Salary and scope reviewed manually.' });
+
+    expect(approveResponse.status).toBe(200);
+    expect(approveResponse.body.data.match.status).toBe(JOB_STATUS.APPROVED);
+    expect(approveResponse.body.data.analysis.review.decision).toBe('approved');
+  });
+
+  it('rejects a job that is awaiting human review', async () => {
+    const app = buildApp();
+
+    const createResponse = await request(app).post('/api/v1/jobs/manual').send({
+      rawText: fixture('manual-job-spanish.txt'),
+      sourceUrl: 'https://example.com/backend-job-reject',
+      sourceLabel: 'Manual rejection',
+    });
+
+    const rejectResponse = await request(app)
+      .post(`/api/v1/jobs/${createResponse.body.data.id}/reject`)
+      .send({ reason: 'Not a priority right now.' });
+
+    expect(rejectResponse.status).toBe(200);
+    expect(rejectResponse.body.data.match.status).toBe(JOB_STATUS.REJECTED);
+    expect(rejectResponse.body.data.analysis.review.decision).toBe('rejected');
+  });
 });
