@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { env } from '../../config/env.js';
+import { retryOperation } from '../../lib/retry.js';
 import { aiJobExtractionSchema } from '../../schemas/aiExtractionSchemas.js';
 
 const SYSTEM_PROMPT = `
@@ -21,6 +22,7 @@ Rules:
 export function createOpenAiEnrichmentService(options = {}) {
   const config = options.config ?? env;
   const client = options.client ?? createClient(config);
+  const breaker = options.breaker ?? null;
 
   return {
     async enrichManualJob(input, deterministicParse) {
@@ -41,31 +43,42 @@ export function createOpenAiEnrichmentService(options = {}) {
       }
 
       try {
-        const response = await client.responses.parse({
-          model: config.OPENAI_MODEL,
-          reasoning: {
-            effort: config.OPENAI_REASONING_EFFORT,
-          },
-          text: {
-            verbosity: config.OPENAI_TEXT_VERBOSITY,
-            format: zodTextFormat(aiJobExtractionSchema, 'job_offer_extraction'),
-          },
-          input: [
-            {
-              role: 'system',
-              content: [{ type: 'input_text', text: SYSTEM_PROMPT }],
-            },
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'input_text',
-                  text: buildUserPrompt(input, deterministicParse),
-                },
-              ],
-            },
-          ],
-        });
+        const response = await executeProviderCall(
+          breaker,
+          () =>
+            retryOperation(
+              () =>
+                client.responses.parse({
+                  model: config.OPENAI_MODEL,
+                  reasoning: {
+                    effort: config.OPENAI_REASONING_EFFORT,
+                  },
+                  text: {
+                    verbosity: config.OPENAI_TEXT_VERBOSITY,
+                    format: zodTextFormat(aiJobExtractionSchema, 'job_offer_extraction'),
+                  },
+                  input: [
+                    {
+                      role: 'system',
+                      content: [{ type: 'input_text', text: SYSTEM_PROMPT }],
+                    },
+                    {
+                      role: 'user',
+                      content: [
+                        {
+                          type: 'input_text',
+                          text: buildUserPrompt(input, deterministicParse),
+                        },
+                      ],
+                    },
+                  ],
+                }),
+              {
+                attempts: config.EXTERNAL_RETRY_ATTEMPTS,
+                baseDelayMs: config.isTest ? 0 : config.EXTERNAL_RETRY_BASE_DELAY_MS,
+              },
+            ),
+        );
 
         if (!response.output_parsed) {
           return disabledResult('empty_output', 'OpenAI did not return a parsed extraction');
@@ -91,6 +104,14 @@ export function createOpenAiEnrichmentService(options = {}) {
       }
     },
   };
+}
+
+async function executeProviderCall(breaker, operation) {
+  if (!breaker) {
+    return operation();
+  }
+
+  return breaker.execute(operation);
 }
 
 function createClient(config) {

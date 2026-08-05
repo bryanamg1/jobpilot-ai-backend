@@ -55,4 +55,85 @@ describe('answers routes', () => {
     expect(deleteResponse.status).toBe(200);
     expect(deleteResponse.body.data.deleted).toBe(true);
   });
+
+  it('returns 400 when question is empty', async () => {
+    const app = buildApp();
+
+    const response = await request(app).post('/api/v1/answers').send({
+      kind: 'custom',
+      question: '',
+      answer: 'Respuesta valida.',
+      certainty: 'CONFIRMED',
+      tags: [],
+    });
+
+    expectValidationError(response, 'question', 'La pregunta es obligatoria.');
+  });
+
+  it('returns 400 when answer is empty', async () => {
+    const app = buildApp();
+
+    const response = await request(app).post('/api/v1/answers').send({
+      kind: 'custom',
+      question: 'Pregunta valida',
+      answer: '',
+      certainty: 'CONFIRMED',
+      tags: [],
+    });
+
+    expectValidationError(response, 'answer', 'La respuesta es obligatoria.');
+  });
+
+  it('returns 400 when question and answer only contain whitespace', async () => {
+    const app = buildApp();
+
+    const response = await request(app).post('/api/v1/answers').send({
+      kind: 'custom',
+      question: '   ',
+      answer: '   ',
+      certainty: 'CONFIRMED',
+      tags: ['redis'],
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+    expect(response.body.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'question', message: 'La pregunta es obligatoria.' }),
+        expect.objectContaining({ field: 'answer', message: 'La respuesta es obligatoria.' }),
+      ]),
+    );
+  });
+
+  it('returns 400 when payload shape is invalid', async () => {
+    const app = buildApp();
+
+    const response = await request(app).post('/api/v1/answers').send({
+      kind: 'custom',
+      certainty: 'CONFIRMED',
+      tags: 'redis',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+    expect(response.body.message).toBe('Los datos enviados no son válidos.');
+    expect(response.body.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'question' }),
+        expect.objectContaining({ field: 'answer' }),
+        expect.objectContaining({ field: 'tags' }),
+      ]),
+    );
+  });
 });
+
+function expectValidationError(response, field, message) {
+  expect(response.status).toBe(400);
+  expect(response.body.success).toBe(false);
+  expect(response.body.code).toBe('VALIDATION_ERROR');
+  expect(response.body.message).toBe('Los datos enviados no son válidos.');
+  expect(response.body.errors).toEqual(
+    expect.arrayContaining([expect.objectContaining({ field, message })]),
+  );
+}
