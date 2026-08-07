@@ -13,10 +13,14 @@ import { getRepository } from './repositories/repositoryFactory.js';
 import { createApprovalsRouter } from './routes/v1/approvals.routes.js';
 import { createAuditsRouter } from './routes/v1/audits.routes.js';
 import { createAnswersRouter } from './routes/v1/answers.routes.js';
+import { createAutomationRouter } from './routes/v1/automation.routes.js';
 import { createBrowserSessionsRouter } from './routes/v1/browserSessions.routes.js';
 import { createAuditService } from './services/audit/auditService.js';
 import { createAnswerLibraryService } from './services/answers/answerLibraryService.js';
+import { createApplicationRunnerService } from './services/applications/applicationRunnerService.js';
 import { createApprovalRequestService } from './services/approvals/approvalRequestService.js';
+import { createAutomationSchedulerService } from './services/automation/automationSchedulerService.js';
+import { createAutomationSettingsService } from './services/automation/automationSettingsService.js';
 import { createBrowserSessionService } from './services/browser/browserSessionService.js';
 import { createDashboardService } from './services/dashboard/dashboardService.js';
 import { createGmailIntegrationService } from './services/gmail/gmailIntegrationService.js';
@@ -46,6 +50,8 @@ export function buildApp(options = {}) {
   const answerLibraryService = options.answerLibraryService ?? createAnswerLibraryService(repository, auditService);
   const approvalRequestService =
     options.approvalRequestService ?? createApprovalRequestService(repository, auditService);
+  const automationSettingsService =
+    options.automationSettingsService ?? createAutomationSettingsService(repository, auditService);
   const openAiEnrichmentService =
     options.openAiEnrichmentService ??
     createOpenAiEnrichmentService({
@@ -69,6 +75,9 @@ export function buildApp(options = {}) {
       answerLibraryService,
       approvalRequestService,
     });
+  const applicationRunnerService =
+    options.applicationRunnerService ??
+    createApplicationRunnerService(repository, auditService, jobDraftService, automationSettingsService);
   const jobApprovalService =
     options.jobApprovalService ?? createJobApprovalService(repository, auditService);
   const browserSessionService =
@@ -81,7 +90,11 @@ export function buildApp(options = {}) {
     createGmailIntegrationService(repository, auditService, jobDraftService, {
       breaker: reliabilityRegistry.getBreaker('gmail'),
     });
-  const dashboardService = options.dashboardService ?? createDashboardService(repository);
+  const dashboardService =
+    options.dashboardService ??
+    createDashboardService(repository, {
+      automationSettingsService,
+    });
   const healthService =
     options.healthService ??
     createHealthService(repository, {
@@ -91,6 +104,9 @@ export function buildApp(options = {}) {
     });
   const profileService = options.profileService ?? createProfileService(repository, auditService);
   const resumeService = options.resumeService ?? createResumeService(repository, auditService);
+  const automationSchedulerService =
+    options.automationSchedulerService ??
+    createAutomationSchedulerService(automationSettingsService, applicationRunnerService);
 
   const app = express();
 
@@ -153,6 +169,7 @@ export function buildApp(options = {}) {
   app.use('/api/v1/health', createHealthRouter({ healthService }));
   app.use('/api/v1/approvals', createApprovalsRouter({ approvalRequestService }));
   app.use('/api/v1/audits', createAuditsRouter({ auditService }));
+  app.use('/api/v1/automation', createAutomationRouter({ automationSettingsService, applicationRunnerService }));
   app.use('/api/v1/browser-sessions', createBrowserSessionsRouter({ browserSessionService }));
   app.use('/api/v1/answers', createAnswersRouter({ answerLibraryService }));
   app.use('/api/v1/profile', createProfileRouter({ profileService }));
@@ -164,6 +181,7 @@ export function buildApp(options = {}) {
       gmailIntegrationService,
       jobApprovalService,
       resumeService,
+      applicationRunnerService,
     }),
   );
   app.use('/api/v1/resumes', createResumesRouter({ resumeService }));
@@ -177,6 +195,10 @@ export function buildApp(options = {}) {
 
   app.use(notFoundHandler);
   app.use(errorHandler);
+
+  if (!env.isTest && options.startAutomationScheduler !== false) {
+    automationSchedulerService.start();
+  }
 
   return app;
 }

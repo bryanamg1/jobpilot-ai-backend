@@ -210,6 +210,7 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
         rawText: buildCaptureText(snapshot, providerConfig),
         sourceUrl: snapshot.url,
         sourceLabel: providerConfig?.sourceLabel ?? 'LinkedIn supervised session',
+        sourceType: mapProviderToSourceType(record.provider),
       });
 
       const updated = updateSessionFromSnapshot(record, snapshot, {
@@ -378,4 +379,17 @@ async function executeRuntimeCall(breaker, operation) {
   }
 
   return breaker.execute(operation);
+}
+
+function mapProviderToSourceType(provider) {
+  switch (provider) {
+    case BROWSER_SESSION_PROVIDER.LINKEDIN_JOBS:
+      return 'LINKEDIN_JOBS_SUPERVISED';
+    case BROWSER_SESSION_PROVIDER.LINKEDIN_FEED:
+      return 'LINKEDIN_FEED_SUPERVISED';
+    case BROWSER_SESSION_PROVIDER.LINKEDIN_POST_SEARCH:
+      return 'LINKEDIN_POST_SEARCH_SUPERVISED';
+    default:
+      return 'MANUAL';
+  }
 }

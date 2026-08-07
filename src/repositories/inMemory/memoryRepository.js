@@ -22,6 +22,52 @@ export function createMemoryRepository() {
       runtime.resumes.push(structuredClone(record));
       return record;
     },
+    async getAutomationSettings() {
+      return runtime.automationSettings ? structuredClone(runtime.automationSettings) : null;
+    },
+    async saveAutomationSettings(record) {
+      runtime.automationSettings = structuredClone(record);
+      return structuredClone(record);
+    },
+    async listApplications(filters = {}) {
+      const items = runtime.applications
+        .filter((entry) => matchApplicationFilters(entry, filters))
+        .toSorted((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+      return items.slice(0, filters.limit ?? 50);
+    },
+    async findLatestApplicationByJobId(jobId) {
+      const items = runtime.applications
+        .filter((entry) => entry.jobOfferId === jobId)
+        .toSorted((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+      return items[0] ?? null;
+    },
+    async saveApplication(record) {
+      runtime.applications.push(structuredClone(record));
+      return structuredClone(record);
+    },
+    async countCompletedApplicationsForDate(dateKey) {
+      return runtime.applications.filter(
+        (entry) => entry.status === 'COMPLETED' && entry.metadata?.dateKey === dateKey,
+      ).length;
+    },
+    async listAgentRuns(filters = {}) {
+      const items = runtime.agentRuns.toSorted((left, right) =>
+        String(right.startedAt).localeCompare(String(left.startedAt)),
+      );
+      return items.slice(0, filters.limit ?? 20);
+    },
+    async saveAgentRun(record) {
+      runtime.agentRuns.push(structuredClone(record));
+      return structuredClone(record);
+    },
+    async updateAgentRun(record) {
+      const index = runtime.agentRuns.findIndex((entry) => entry.id === record.id);
+      if (index === -1) {
+        return null;
+      }
+      runtime.agentRuns[index] = structuredClone(record);
+      return structuredClone(runtime.agentRuns[index]);
+    },
     async listBrowserSessions() {
       return runtime.browserSessions.toSorted(compareBrowserSessions);
     },
@@ -178,6 +224,18 @@ function matchAuditEventFilters(entry, filters) {
   }
 
   if (filters.eventName && entry.eventName !== filters.eventName) {
+    return false;
+  }
+
+  return true;
+}
+
+function matchApplicationFilters(entry, filters) {
+  if (filters.jobOfferId && entry.jobOfferId !== filters.jobOfferId) {
+    return false;
+  }
+
+  if (filters.status && entry.status !== filters.status) {
     return false;
   }
 

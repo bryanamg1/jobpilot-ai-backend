@@ -1,4 +1,4 @@
-import path from 'node:path';
+﻿import path from 'node:path';
 import { randomUUID, createHmac } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { google } from 'googleapis';
@@ -14,7 +14,7 @@ const GMAIL_SCOPES = [
 ];
 
 const DRAFT_LABEL_NOTE =
-  'Gmail drafts only support the built-in DRAFT label. The review label is created for future alert-message workflows and internal tracking.';
+  'Los borradores de Gmail solo admiten la etiqueta predeterminada DRAFT. La etiqueta de revision se conserva para seguimiento interno y futuras automatizaciones.';
 
 export function createGmailIntegrationService(repository, auditService, jobDraftService, options = {}) {
   const config = options.config ?? env;
@@ -176,13 +176,13 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
       const preview = await jobDraftService.createPreview(jobId);
 
       if (preview.status === 'BLOCKED') {
-        throw new HttpError(409, 'Draft creation is blocked for this offer', {
+        throw new HttpError(409, 'La vacante todavia no puede generar un borrador en Gmail.', {
           blockedReasons: preview.blockedReasons,
         });
       }
 
       if (!preview.recipient) {
-        throw new HttpError(400, 'Recipient email is not visible in the source', {
+        throw new HttpError(400, 'No se ve un correo de contacto en la fuente autorizada.', {
           warnings: preview.generation.warnings,
         });
       }
@@ -192,7 +192,7 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
         ...(preview.rejectedApprovalRequests ?? []),
       ];
       if (unresolvedApprovals.length) {
-        throw new HttpError(409, 'Sensitive approval requests must be resolved before creating the Gmail draft', {
+        throw new HttpError(409, 'Antes de crear el borrador de Gmail debes resolver las aprobaciones sensibles pendientes.', {
           approvalRequests: unresolvedApprovals,
         });
       }
@@ -231,12 +231,12 @@ export function createGmailIntegrationService(repository, auditService, jobDraft
           warnings: [
             ...preview.generation.warnings,
             attachment
-              ? `Attached CV automatically: ${attachment.label} (${attachment.originalFileName}).`
+              ? `CV adjunto automaticamente: ${attachment.label} (${attachment.originalFileName}).`
               : preview.selectedResume
-                ? `The selected CV could not be attached automatically. Verify it manually before sending: ${preview.selectedResume.label} (${preview.selectedResume.originalFileName}).`
-              : 'No CV is selected for this job yet. Attach the correct CV manually before sending.',
+                ? `El CV seleccionado no pudo adjuntarse automaticamente. Verificalo manualmente antes de enviar: ${preview.selectedResume.label} (${preview.selectedResume.originalFileName}).`
+              : 'Todavia no se selecciono un CV para esta vacante. Antes de enviar el correo, adjunta manualmente el CV correspondiente.',
             ...(preview.approvalRequests ?? []).map(
-              (item) => `Approval ${item.approvalKind}: ${item.status}`,
+              (item) => `Aprobacion ${item.approvalKind}: ${item.status}`,
             ),
             DRAFT_LABEL_NOTE,
           ],
@@ -291,7 +291,7 @@ function isConfigured(config) {
 
 function ensureConfigured(config) {
   if (!isConfigured(config)) {
-    throw new HttpError(400, 'Google OAuth is not fully configured');
+    throw new HttpError(400, 'La configuracion de Google OAuth todavia no esta completa.');
   }
 }
 
@@ -308,7 +308,7 @@ async function getAuthenticatedClients(config, tokenStore, oauthClientFactory, g
 
   const session = await tokenStore.read();
   if (!session?.tokens) {
-    throw new HttpError(401, 'Gmail is not connected');
+    throw new HttpError(401, 'Gmail todavia no esta conectado.');
   }
 
   const oauthClient = oauthClientFactory();
@@ -360,12 +360,12 @@ function verifyState(state, secret) {
   const expectedSignature = createHmac('sha256', secret).update(encodedPayload).digest('base64url');
 
   if (!encodedPayload || !signature || signature !== expectedSignature) {
-    throw new HttpError(400, 'Invalid OAuth state');
+    throw new HttpError(400, 'El estado de OAuth no es valido.');
   }
 
   const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
   if (Date.now() - Number(payload.createdAt ?? 0) > 15 * 60_000) {
-    throw new HttpError(400, 'OAuth state expired');
+    throw new HttpError(400, 'El estado de OAuth vencio. Inicia la conexion nuevamente.');
   }
 
   return payload;
@@ -417,9 +417,9 @@ function buildMimeMessage(preview, attachment) {
     '',
     preview.body,
     '',
-    `Original source: ${preview.sourceUrl ?? 'N/A'}`,
-    `Compatibility score: ${preview.score}`,
-    `Internal reference: ${preview.jobId}`,
+    `Fuente original: ${preview.sourceUrl ?? 'N/A'}`,
+    `Compatibilidad: ${preview.score}`,
+    `Referencia interna: ${preview.jobId}`,
     '',
     `--${boundary}`,
     `Content-Type: ${attachment.mimeType}; name="${sanitizeHeader(attachment.originalFileName)}"`,
@@ -440,9 +440,9 @@ function buildTextOnlyMimeMessage(preview) {
     '',
     preview.body,
     '',
-    `Original source: ${preview.sourceUrl ?? 'N/A'}`,
-    `Compatibility score: ${preview.score}`,
-    `Internal reference: ${preview.jobId}`,
+    `Fuente original: ${preview.sourceUrl ?? 'N/A'}`,
+    `Compatibilidad: ${preview.score}`,
+    `Referencia interna: ${preview.jobId}`,
   ].join('\r\n');
 }
 
@@ -467,3 +467,4 @@ async function executeProviderCall(breaker, config, operation) {
 
   return breaker.execute(runner);
 }
+

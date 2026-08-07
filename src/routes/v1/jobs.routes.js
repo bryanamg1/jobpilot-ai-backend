@@ -6,6 +6,7 @@ import {
   manualJobInputSchema,
 } from '../../schemas/jobSchemas.js';
 import { jobResumeSelectionSchema } from '../../schemas/resumeSchemas.js';
+import { jobDryRunParamsSchema } from '../../schemas/automationSchemas.js';
 
 export function createJobsRouter({
   jobOfferService,
@@ -13,6 +14,7 @@ export function createJobsRouter({
   gmailIntegrationService,
   jobApprovalService,
   resumeService,
+  applicationRunnerService,
 }) {
   const router = Router();
 
@@ -47,6 +49,15 @@ export function createJobsRouter({
     asyncHandler(async (req, res) => {
       const params = jobDraftPreviewParamsSchema.parse(req.params);
       const payload = await gmailIntegrationService.createDraftFromJob(params.jobId);
+      res.status(201).json({ data: payload });
+    }),
+  );
+
+  router.post(
+    '/:jobId/dry-run-application',
+    asyncHandler(async (req, res) => {
+      const params = jobDryRunParamsSchema.parse(req.params);
+      const payload = await applicationRunnerService.runJobDryRun(params.jobId);
       res.status(201).json({ data: payload });
     }),
   );

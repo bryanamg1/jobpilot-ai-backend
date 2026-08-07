@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { createGmailIntegrationService } from '../../src/services/gmail/gmailIntegrationService.js';
 
 describe('gmailIntegrationService', () => {
@@ -78,11 +78,11 @@ describe('gmailIntegrationService', () => {
             score: 82,
             status: 'REVIEW_REQUIRED',
             recipient: 'jobs@acmelabs.com',
-            subject: 'Application for Backend Developer - Bryan Marquez',
-            body: 'Hello,\n\nI am interested in the Backend Developer role.\n\nBest regards,\nBryan Marquez',
+            subject: 'Postulacion para Backend Developer - Bryan Marquez',
+            body: 'Hola,\n\nMe interesa la vacante de Backend Developer.\n\nSaludos,\nBryan Marquez',
             generation: { mode: 'deterministic', warnings: [] },
             blockedReasons: [],
-            approvalsRequired: ['salary: requires approval'],
+            approvalsRequired: ['salary: requiere aprobacion'],
           };
         },
       },
@@ -167,8 +167,8 @@ describe('gmailIntegrationService', () => {
             score: 90,
             status: 'READY',
             recipient: 'jobs@acmelabs.com',
-            subject: 'Application for Backend Developer - Bryan Marquez',
-            body: 'Hello,\n\nI am interested in the Backend Developer role.\n\nBest regards,\nBryan Marquez',
+            subject: 'Postulacion para Backend Developer - Bryan Marquez',
+            body: 'Hola,\n\nMe interesa la vacante de Backend Developer.\n\nSaludos,\nBryan Marquez',
             generation: { mode: 'deterministic', warnings: [] },
             blockedReasons: [],
             approvalsRequired: [],
@@ -226,7 +226,7 @@ describe('gmailIntegrationService', () => {
       sizeBytes: 2048,
     });
     expect(payload.warnings).toContain(
-      'Attached CV automatically: Backend CV EN (Bryan-Marquez-Backend-CV.pdf).',
+      'CV adjunto automaticamente: Backend CV EN (Bryan-Marquez-Backend-CV.pdf).',
     );
     expect(gmailApi.users.drafts.create).toHaveBeenCalledTimes(1);
     expect(saveEmailDraft).toHaveBeenCalledWith(
@@ -269,11 +269,11 @@ describe('gmailIntegrationService', () => {
             score: 78,
             status: 'REVIEW_REQUIRED',
             recipient: 'jobs@acmelabs.com',
-            subject: 'Application for Backend Developer - Bryan Marquez',
-            body: 'Hello,\n\nI am interested in the Backend Developer role.\n\nBest regards,\nBryan Marquez',
+            subject: 'Postulacion para Backend Developer - Bryan Marquez',
+            body: 'Hola,\n\nMe interesa la vacante de Backend Developer.\n\nSaludos,\nBryan Marquez',
             generation: { mode: 'deterministic', warnings: [] },
             blockedReasons: [],
-            approvalsRequired: ['salary: requires approval'],
+            approvalsRequired: ['salary: requiere aprobacion'],
             pendingApprovalRequests: [
               {
                 id: 'approval-1',
@@ -330,7 +330,8 @@ describe('gmailIntegrationService', () => {
 
     await expect(service.createDraftFromJob('job-2')).rejects.toMatchObject({
       statusCode: 409,
-      message: 'Sensitive approval requests must be resolved before creating the Gmail draft',
+      message: 'Antes de crear el borrador de Gmail debes resolver las aprobaciones sensibles pendientes.',
     });
   });
 });
+

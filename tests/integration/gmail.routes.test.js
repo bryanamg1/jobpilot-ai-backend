@@ -1,4 +1,4 @@
-import request from 'supertest';
+﻿import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
 import { defaultCandidateProfile } from '../../src/config/candidateProfileSeed.js';
@@ -25,7 +25,7 @@ describe('gmail integration routes', () => {
             connected: false,
             emailAddress: null,
             labelName: 'Postulaciones/Por revisar',
-            draftLabelNote: 'Draft labels are limited in Gmail.',
+            draftLabelNote: 'Los borradores de Gmail solo admiten la etiqueta predeterminada DRAFT. La etiqueta de revision se conserva para seguimiento interno y futuras automatizaciones.',
             alertQuery: 'job alert',
             scopes: ['gmail.readonly'],
           };
@@ -77,12 +77,12 @@ describe('gmail integration routes', () => {
           return {
             externalId: `draft-${jobId}`,
             recipient: 'jobs@acmelabs.com',
-            subject: 'Application for Backend Developer - Bryan Marquez',
+            subject: 'Postulacion para Backend Developer - Bryan Marquez',
             provider: 'GMAIL',
             labelName: 'Postulaciones/Por revisar',
-            draftLabelNote: 'Draft labels are limited in Gmail.',
+            draftLabelNote: 'Los borradores de Gmail solo admiten la etiqueta predeterminada DRAFT. La etiqueta de revision se conserva para seguimiento interno y futuras automatizaciones.',
             attachmentStatus: 'MANUAL_REQUIRED',
-            warnings: ['Attach the selected CV manually before sending.'],
+            warnings: ['Antes de enviar, adjunta manualmente el CV correspondiente.'],
           };
         },
       },
@@ -144,3 +144,4 @@ describe('gmail integration routes', () => {
     expect(response.headers.location).toBe('http://localhost:5173/?gmail=connected');
   });
 });
+

@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS automation_settings (
+  id VARCHAR(64) PRIMARY KEY,
+  enabled TINYINT(1) NOT NULL,
+  mode VARCHAR(32) NOT NULL,
+  timezone VARCHAR(120) NOT NULL,
+  daily_application_limit INT NOT NULL,
+  daily_discovery_limit INT NOT NULL,
+  minimum_match_score INT NOT NULL,
+  require_human_approval TINYINT(1) NOT NULL,
+  unknown_question_policy VARCHAR(40) NOT NULL,
+  captcha_policy VARCHAR(40) NOT NULL,
+  mfa_policy VARCHAR(40) NOT NULL,
+  salary_requires_approval TINYINT(1) NOT NULL,
+  start_time VARCHAR(5) NOT NULL,
+  days_of_week JSON NOT NULL,
+  filters_json JSON NOT NULL,
+  source_policies_json JSON NOT NULL,
+  version INT NOT NULL,
+  last_triggered_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL
+);

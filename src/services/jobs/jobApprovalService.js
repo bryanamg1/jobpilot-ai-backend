@@ -10,7 +10,7 @@ export function createJobApprovalService(repository, auditService) {
       }
 
       if (record.match.status !== JOB_STATUS.AWAITING_APPROVAL) {
-        throw new HttpError(409, 'Only jobs awaiting approval can be approved', {
+        throw new HttpError(409, 'Solo puedes aprobar vacantes que esten esperando revision humana.', {
           currentStatus: record.match.status,
         });
       }
@@ -34,7 +34,7 @@ export function createJobApprovalService(repository, auditService) {
       }
 
       if (record.match.status !== JOB_STATUS.AWAITING_APPROVAL) {
-        throw new HttpError(409, 'Only jobs awaiting approval can be rejected', {
+        throw new HttpError(409, 'Solo puedes rechazar vacantes que esten esperando revision humana.', {
           currentStatus: record.match.status,
         });
       }

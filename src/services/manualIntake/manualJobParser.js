@@ -30,7 +30,7 @@ const modalityPatterns = [
   { value: 'onsite', patterns: ['onsite', 'presencial', 'on site'] },
 ];
 
-export function parseManualJob({ rawText, sourceUrl, sourceLabel }) {
+export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType }) {
   const lines = rawText
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -56,7 +56,7 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel }) {
 
   return {
     source: {
-      type: 'MANUAL',
+      type: sourceType || sourceTypeOrDefault(sourceLabel),
       label: sourceLabel,
       originalUrl: normalizeUrl(sourceUrl),
       originalText: rawText,
@@ -126,6 +126,19 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel }) {
       flags,
     },
   };
+}
+
+function sourceTypeOrDefault(sourceLabel) {
+  if (sourceLabel?.includes('LinkedIn Jobs')) {
+    return 'LINKEDIN_JOBS_SUPERVISED';
+  }
+  if (sourceLabel?.includes('LinkedIn Feed')) {
+    return 'LINKEDIN_FEED_SUPERVISED';
+  }
+  if (sourceLabel?.includes('LinkedIn post search')) {
+    return 'LINKEDIN_POST_SEARCH_SUPERVISED';
+  }
+  return 'MANUAL';
 }
 
 function extractField(lines, labels) {

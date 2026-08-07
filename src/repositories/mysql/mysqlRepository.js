@@ -85,6 +85,205 @@ export function createMysqlRepository() {
 
       return record;
     },
+    async getAutomationSettings() {
+      const [rows] = await pool.query(
+        `
+          SELECT id, enabled, mode, timezone, daily_application_limit, daily_discovery_limit,
+            minimum_match_score, require_human_approval, unknown_question_policy, captcha_policy,
+            mfa_policy, salary_requires_approval, start_time, days_of_week, filters_json,
+            source_policies_json, version, last_triggered_at, created_at, updated_at
+          FROM automation_settings
+          WHERE id = 'default'
+          LIMIT 1
+        `,
+      );
+
+      return rows[0] ? mapAutomationSettingsRow(rows[0]) : null;
+    },
+    async saveAutomationSettings(record) {
+      await pool.query(
+        `
+          INSERT INTO automation_settings (
+            id, enabled, mode, timezone, daily_application_limit, daily_discovery_limit,
+            minimum_match_score, require_human_approval, unknown_question_policy, captcha_policy,
+            mfa_policy, salary_requires_approval, start_time, days_of_week, filters_json,
+            source_policies_json, version, last_triggered_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+          ON DUPLICATE KEY UPDATE
+            enabled = VALUES(enabled),
+            mode = VALUES(mode),
+            timezone = VALUES(timezone),
+            daily_application_limit = VALUES(daily_application_limit),
+            daily_discovery_limit = VALUES(daily_discovery_limit),
+            minimum_match_score = VALUES(minimum_match_score),
+            require_human_approval = VALUES(require_human_approval),
+            unknown_question_policy = VALUES(unknown_question_policy),
+            captcha_policy = VALUES(captcha_policy),
+            mfa_policy = VALUES(mfa_policy),
+            salary_requires_approval = VALUES(salary_requires_approval),
+            start_time = VALUES(start_time),
+            days_of_week = VALUES(days_of_week),
+            filters_json = VALUES(filters_json),
+            source_policies_json = VALUES(source_policies_json),
+            version = VALUES(version),
+            last_triggered_at = VALUES(last_triggered_at),
+            updated_at = NOW()
+        `,
+        [
+          record.id,
+          record.enabled ? 1 : 0,
+          record.mode,
+          record.timezone,
+          record.dailyApplicationLimit,
+          record.dailyDiscoveryLimit,
+          record.minimumMatchScore,
+          record.requireHumanApproval ? 1 : 0,
+          record.unknownQuestionPolicy,
+          record.captchaPolicy,
+          record.mfaPolicy,
+          record.salaryRequiresApproval ? 1 : 0,
+          record.startTime,
+          JSON.stringify(record.daysOfWeek),
+          JSON.stringify(record.filters),
+          JSON.stringify(record.sourcePolicies),
+          record.version,
+          normalizeMysqlDateTime(record.lastTriggeredAt),
+        ],
+      );
+
+      return record;
+    },
+    async listApplications(filters = {}) {
+      const clauses = ['deleted_at IS NULL'];
+      const params = [];
+
+      if (filters.jobOfferId) {
+        clauses.push('job_offer_id = ?');
+        params.push(filters.jobOfferId);
+      }
+
+      if (filters.status) {
+        clauses.push('status = ?');
+        params.push(filters.status);
+      }
+
+      const [rows] = await pool.query(
+        `
+          SELECT id, job_offer_id, status, submitted_at, metadata_json, created_at, updated_at
+          FROM applications
+          WHERE ${clauses.join(' AND ')}
+          ORDER BY created_at DESC
+          LIMIT ?
+        `,
+        [...params, filters.limit ?? 50],
+      );
+
+      return rows.map(mapApplicationRow);
+    },
+    async findLatestApplicationByJobId(jobId) {
+      const [rows] = await pool.query(
+        `
+          SELECT id, job_offer_id, status, submitted_at, metadata_json, created_at, updated_at
+          FROM applications
+          WHERE job_offer_id = ? AND deleted_at IS NULL
+          ORDER BY created_at DESC
+          LIMIT 1
+        `,
+        [jobId],
+      );
+
+      return rows[0] ? mapApplicationRow(rows[0]) : null;
+    },
+    async saveApplication(record) {
+      await pool.query(
+        `
+          INSERT INTO applications (
+            id,
+            job_offer_id,
+            status,
+            submitted_at,
+            metadata_json,
+            created_at,
+            updated_at,
+            deleted_at
+          ) VALUES (?, ?, ?, ?, ?, NOW(), NOW(), NULL)
+        `,
+        [
+          record.id,
+          record.jobOfferId,
+          record.status,
+          normalizeMysqlDateTime(record.submittedAt),
+          JSON.stringify({
+            ...record.metadata,
+            mode: record.mode,
+            trigger: record.trigger,
+          }),
+        ],
+      );
+      return record;
+    },
+    async countCompletedApplicationsForDate(dateKey) {
+      const [rows] = await pool.query(
+        `
+          SELECT COUNT(*) AS total
+          FROM applications
+          WHERE deleted_at IS NULL
+            AND status = 'COMPLETED'
+            AND JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.dateKey')) = ?
+        `,
+        [dateKey],
+      );
+
+      return Number(rows[0]?.total ?? 0);
+    },
+    async listAgentRuns(filters = {}) {
+      const [rows] = await pool.query(
+        `
+          SELECT id, source_type, status, metadata_json, started_at, finished_at, created_at
+          FROM agent_runs
+          ORDER BY started_at DESC, created_at DESC
+          LIMIT ?
+        `,
+        [filters.limit ?? 20],
+      );
+      return rows.map(mapAgentRunRow);
+    },
+    async saveAgentRun(record) {
+      await pool.query(
+        `
+          INSERT INTO agent_runs (
+            id, source_type, status, metadata_json, started_at, finished_at, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+        `,
+        [
+          record.id,
+          record.sourceType,
+          record.status,
+          JSON.stringify(record.metadata),
+          normalizeMysqlDateTime(record.startedAt),
+          normalizeMysqlDateTime(record.finishedAt),
+        ],
+      );
+      return record;
+    },
+    async updateAgentRun(record) {
+      await pool.query(
+        `
+          UPDATE agent_runs
+          SET source_type = ?, status = ?, metadata_json = ?, started_at = ?, finished_at = ?
+          WHERE id = ?
+        `,
+        [
+          record.sourceType,
+          record.status,
+          JSON.stringify(record.metadata),
+          normalizeMysqlDateTime(record.startedAt),
+          normalizeMysqlDateTime(record.finishedAt),
+          record.id,
+        ],
+      );
+      return record;
+    },
     async listBrowserSessions() {
       const [rows] = await pool.query(
         `
@@ -136,8 +335,8 @@ export function createMysqlRepository() {
           record.id,
           record.provider,
           record.status,
-          record.startedAt,
-          record.endedAt,
+          normalizeMysqlDateTime(record.startedAt),
+          normalizeMysqlDateTime(record.endedAt),
           JSON.stringify(record.metadata),
         ],
       );
@@ -153,8 +352,8 @@ export function createMysqlRepository() {
         `,
         [
           record.status,
-          record.startedAt,
-          record.endedAt,
+          normalizeMysqlDateTime(record.startedAt),
+          normalizeMysqlDateTime(record.endedAt),
           JSON.stringify(record.metadata),
           record.id,
         ],
@@ -682,6 +881,58 @@ function mapResumeRow(row) {
   };
 }
 
+function mapAutomationSettingsRow(row) {
+  return {
+    id: row.id,
+    enabled: Boolean(row.enabled),
+    mode: row.mode,
+    timezone: row.timezone,
+    dailyApplicationLimit: Number(row.daily_application_limit),
+    dailyDiscoveryLimit: Number(row.daily_discovery_limit),
+    minimumMatchScore: Number(row.minimum_match_score),
+    requireHumanApproval: Boolean(row.require_human_approval),
+    unknownQuestionPolicy: row.unknown_question_policy,
+    captchaPolicy: row.captcha_policy,
+    mfaPolicy: row.mfa_policy,
+    salaryRequiresApproval: Boolean(row.salary_requires_approval),
+    startTime: row.start_time,
+    daysOfWeek: parseStoredJson(row.days_of_week),
+    filters: parseStoredJson(row.filters_json),
+    sourcePolicies: parseStoredJson(row.source_policies_json),
+    version: Number(row.version),
+    lastTriggeredAt: row.last_triggered_at ? serializeDate(row.last_triggered_at) : null,
+    createdAt: serializeDate(row.created_at),
+    updatedAt: serializeDate(row.updated_at),
+  };
+}
+
+function mapApplicationRow(row) {
+  const metadata = parseStoredJson(row.metadata_json);
+  return {
+    id: row.id,
+    jobOfferId: row.job_offer_id,
+    status: row.status,
+    submittedAt: row.submitted_at ? serializeDate(row.submitted_at) : null,
+    createdAt: serializeDate(row.created_at),
+    updatedAt: serializeDate(row.updated_at),
+    mode: metadata.mode ?? null,
+    trigger: metadata.trigger ?? null,
+    metadata,
+  };
+}
+
+function mapAgentRunRow(row) {
+  return {
+    id: row.id,
+    sourceType: row.source_type,
+    status: row.status,
+    metadata: parseStoredJson(row.metadata_json),
+    startedAt: serializeDate(row.started_at),
+    finishedAt: row.finished_at ? serializeDate(row.finished_at) : null,
+    createdAt: serializeDate(row.created_at),
+  };
+}
+
 function mapBrowserSessionRow(row) {
   return {
     id: row.id,
@@ -725,4 +976,17 @@ function serializeDate(value) {
   }
 
   return String(value);
+}
+
+function normalizeMysqlDateTime(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toISOString().slice(0, 19).replace('T', ' ');
 }
