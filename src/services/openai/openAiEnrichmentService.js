@@ -5,18 +5,19 @@ import { retryOperation } from '../../lib/retry.js';
 import { aiJobExtractionSchema } from '../../schemas/aiExtractionSchemas.js';
 
 const SYSTEM_PROMPT = `
-You extract structured job-offer facts from a single source text.
+Extraes hechos estructurados de una vacante a partir de una unica fuente de texto.
 
 Rules:
-- Only use facts present in the provided source text.
-- Never invent employer, salary, years of experience, English level, recruiter email, or technologies.
-- Use certainty CONFIRMED only for explicit facts in the text.
-- Use certainty INFERRED only for safe, low-risk normalization from explicit text.
-- Use certainty REQUIRES_APPROVAL for salary or other sensitive facts.
-- Use certainty UNKNOWN when the text does not support the fact.
-- Use certainty PROHIBITED only for facts that must never be auto-used.
-- Keep sources short and reference the text origin, such as "raw_text" or "deterministic_snapshot".
-- Keep lists deduplicated and concise.
+- Responde siempre en espanol.
+- Usa solo hechos presentes en el texto provisto.
+- Nunca inventes empresa, salario, anos de experiencia, nivel de ingles, correo del recruiter ni tecnologias.
+- Usa certeza CONFIRMED solo para hechos explicitos en el texto.
+- Usa certeza INFERRED solo para normalizaciones seguras y de bajo riesgo derivadas del texto explicito.
+- Usa certeza REQUIRES_APPROVAL para salario u otros datos sensibles.
+- Usa certeza UNKNOWN cuando el texto no respalde el dato.
+- Usa certeza PROHIBITED solo para hechos que nunca deban usarse automaticamente.
+- Mantiene las fuentes cortas y referidas al origen, por ejemplo "raw_text" o "deterministic_snapshot".
+- Mantiene listas sin duplicados y concisas.
 `.trim();
 
 export function createOpenAiEnrichmentService(options = {}) {
@@ -27,19 +28,19 @@ export function createOpenAiEnrichmentService(options = {}) {
   return {
     async enrichManualJob(input, deterministicParse) {
       if (config.isTest) {
-        return disabledResult('test_mode', 'OpenAI enrichment is disabled during automated tests');
+        return disabledResult('test_mode', 'La extraccion con OpenAI se desactiva durante pruebas automatizadas.');
       }
 
       if (config.OPENAI_FEATURE_MODE === 'disabled') {
-        return disabledResult('disabled', 'OpenAI enrichment is disabled');
+        return disabledResult('disabled', 'La extraccion con OpenAI esta deshabilitada.');
       }
 
       if (!config.OPENAI_API_KEY) {
-        return disabledResult('missing_api_key', 'OpenAI API key is not configured');
+        return disabledResult('missing_api_key', 'Todavia no hay una clave de OpenAI configurada.');
       }
 
       if (!client) {
-        return disabledResult('client_unavailable', 'OpenAI client is not available');
+        return disabledResult('client_unavailable', 'El cliente de OpenAI no esta disponible.');
       }
 
       try {
@@ -81,7 +82,7 @@ export function createOpenAiEnrichmentService(options = {}) {
         );
 
         if (!response.output_parsed) {
-          return disabledResult('empty_output', 'OpenAI did not return a parsed extraction');
+          return disabledResult('empty_output', 'OpenAI no devolvio una extraccion estructurada.');
         }
 
         return {
@@ -138,19 +139,21 @@ function disabledResult(code, message) {
 
 function formatError(error) {
   const name = error?.name ?? 'Error';
-  const message = error?.message ?? 'Unknown OpenAI error';
+  const message = error?.message ?? 'Error desconocido de OpenAI';
   return `openai_error:${name}:${message}`;
 }
 
 function buildUserPrompt(input, deterministicParse) {
   return `
-Source label: ${input.sourceLabel || 'Manual input'}
+Responde siempre en espanol.
+
+Etiqueta de la fuente: ${input.sourceLabel || 'Entrada manual'}
 Source URL: ${input.sourceUrl || 'N/A'}
 
-Raw job text:
+Texto bruto de la vacante:
 ${input.rawText}
 
-Deterministic snapshot:
+Snapshot determinista:
 ${JSON.stringify(deterministicParse.jobOffer, null, 2)}
 `.trim();
 }

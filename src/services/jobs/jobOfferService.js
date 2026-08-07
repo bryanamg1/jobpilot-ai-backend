@@ -28,7 +28,7 @@ export function createJobOfferService(repository, auditService, options = {}) {
 
       const duplicate = await repository.findByFingerprint(fingerprint);
       if (duplicate) {
-        throw new HttpError(409, 'A matching offer already exists', {
+        throw new HttpError(409, 'Ya existe una vacante equivalente registrada.', {
           duplicateId: duplicate.id,
         });
       }

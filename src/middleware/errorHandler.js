@@ -1,8 +1,8 @@
-import { ZodError } from 'zod';
+﻿import { ZodError } from 'zod';
 import { HttpError } from '../lib/httpError.js';
 
 export function notFoundHandler(_req, _res, next) {
-  next(new HttpError(404, 'Resource not found'));
+  next(new HttpError(404, 'No se encontro el recurso solicitado.'));
 }
 
 export function errorHandler(error, req, res, next) {
@@ -29,7 +29,7 @@ export function errorHandler(error, req, res, next) {
 
   return res.status(500).json({
     error: 'InternalServerError',
-    message: 'Unexpected server error',
+    message: 'Ocurrio un error inesperado en el servidor.',
     requestId: req.requestId,
   });
 }
@@ -40,3 +40,4 @@ function formatZodErrors(error) {
     message: issue.message,
   }));
 }
+

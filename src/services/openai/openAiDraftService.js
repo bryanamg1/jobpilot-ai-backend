@@ -2,20 +2,22 @@ import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { env } from '../../config/env.js';
 import { CERTAINTY } from '../../constants/certainty.js';
+import { userFacingText } from '../../constants/userFacingText.js';
 import { retryOperation } from '../../lib/retry.js';
 import { aiDraftPreviewSchema } from '../../schemas/aiDraftSchemas.js';
 
 const SYSTEM_PROMPT = `
-You generate a cautious job-application email draft preview.
+Generas un borrador preliminar y prudente para una postulacion laboral.
 
 Rules:
-- Never invent experience, years, English level, salary expectations, work authorization, relocation, or legal answers.
-- Exclude facts with certainty UNKNOWN or PROHIBITED.
-- Exclude sensitive facts that require approval unless the user already approved them.
-- Keep the tone professional, concise, and truthful.
-- Use only the provided candidate profile and analyzed job data.
-- Mention fit through confirmed technologies, projects, and role alignment only.
-- Return structured output only.
+- Responde siempre en espanol.
+- Nunca inventes experiencia, anos, nivel de ingles, expectativas salariales, autorizacion laboral, reubicacion ni respuestas legales.
+- Excluye hechos con certeza UNKNOWN o PROHIBITED.
+- Excluye hechos sensibles que requieran aprobacion, salvo que ya esten aprobados.
+- Manten un tono profesional, conciso y completamente veraz.
+- Usa solo el perfil del candidato y el analisis de vacante provistos.
+- Describe compatibilidad solo con tecnologias, proyectos y alineacion de rol confirmados.
+- Devuelve solo la salida estructurada solicitada.
 `.trim();
 
 export function createOpenAiDraftService(options = {}) {
@@ -104,7 +106,7 @@ export function createOpenAiDraftService(options = {}) {
             model: config.OPENAI_MODEL,
             warnings: [
               ...fallback.generation.warnings,
-              `openai_error:${error?.name ?? 'Error'}:${error?.message ?? 'Unknown error'}`,
+              `openai_error:${error?.name ?? 'Error'}:${error?.message ?? 'Error desconocido'}`,
             ],
           },
         };
@@ -156,21 +158,21 @@ export function buildFallbackDraft(jobAnalysis) {
         mode: 'deterministic',
         provider: 'openai',
         model: null,
-        warnings: ['draft_blocked: offer contains prohibited or unverified requirements'],
+        warnings: [userFacingText.draft.blockedWarning],
       },
     };
   }
 
-  const subject = `Application for ${jobAnalysis.jobOffer.title} - Bryan Marquez`;
+  const subject = userFacingText.draft.subject(jobAnalysis.jobOffer.title);
   const body = [
-    recipient ? `Hello,` : `Hello hiring team,`,
+    recipient ? userFacingText.draft.greetingKnown : userFacingText.draft.greetingTeam,
     '',
-    `My name is Bryan Marquez and I am interested in the ${jobAnalysis.jobOffer.title} opportunity at ${jobAnalysis.jobOffer.company}.`,
+    userFacingText.draft.intro(jobAnalysis.jobOffer.title, jobAnalysis.jobOffer.company),
     buildFitParagraph(jobAnalysis),
     buildProjectParagraph(jobAnalysis),
-    'I would appreciate the opportunity to continue the conversation and share the most relevant resume version for this role.',
+    userFacingText.draft.closing,
     '',
-    'Best regards,',
+    userFacingText.draft.farewell,
     'Bryan Marquez',
     'Buenos Aires, Argentina',
     'GitHub: https://github.com/bryanamg1',
@@ -181,14 +183,12 @@ export function buildFallbackDraft(jobAnalysis) {
 
   const warnings = [...approvals];
   if (!recipient) {
-    warnings.push('Recipient email is not visible in the source. Do not create a Gmail draft yet.');
+    warnings.push(userFacingText.draft.recipientMissing);
   }
   if (jobAnalysis.resumeSelection?.label) {
-    warnings.push(
-      `Selected resume: ${jobAnalysis.resumeSelection.label}. Attach it manually in Gmail before sending.`,
-    );
+    warnings.push(userFacingText.draft.selectedResume(jobAnalysis.resumeSelection.label));
   } else {
-    warnings.push('No resume selected yet for this job. Choose the appropriate CV before sending.');
+    warnings.push(userFacingText.draft.noResumeSelected);
   }
 
   return {
@@ -211,16 +211,18 @@ export function buildFallbackDraft(jobAnalysis) {
 
 function buildPrompt(jobAnalysis, fallbackDraft) {
   return `
-Candidate profile:
+Responde siempre en espanol.
+
+Perfil del candidato:
 ${JSON.stringify(jobAnalysis.profile, null, 2)}
 
-Job offer:
+Vacante:
 ${JSON.stringify(jobAnalysis.jobOffer, null, 2)}
 
-Match summary:
+Resumen del matching:
 ${JSON.stringify(jobAnalysis.match, null, 2)}
 
-Fallback deterministic draft:
+Borrador determinista inicial:
 ${JSON.stringify(
     {
       subject: fallbackDraft.subject,
@@ -287,12 +289,12 @@ function collectFacts(jobAnalysis) {
 function buildFitParagraph(jobAnalysis) {
   const technologies = jobAnalysis.match.matchedTechnologies.slice(0, 4);
   const roleFocus = jobAnalysis.profile.modalities.includes('remote')
-    ? 'I am comfortable working in remote and hybrid environments.'
+    ? userFacingText.draft.remoteFit
     : '';
 
   const techSentence = technologies.length
-    ? `My confirmed stack includes ${technologies.join(', ')}, which aligns with the core requirements visible in the posting.`
-    : 'My confirmed background aligns with the role focus described in the posting.';
+    ? userFacingText.draft.techAligned(technologies)
+    : userFacingText.draft.roleAligned;
 
   return [techSentence, roleFocus].filter(Boolean).join(' ');
 }
@@ -307,7 +309,7 @@ function buildProjectParagraph(jobAnalysis) {
     return null;
   }
 
-  return `Relevant work includes ${projects.join(' and ')}, where I applied backend and frontend development practices with JavaScript-based stacks.`;
+  return userFacingText.draft.projects(projects);
 }
 
 function mergeFacts(baseFacts, nextFacts) {

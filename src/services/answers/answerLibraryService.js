@@ -49,7 +49,7 @@ export function createAnswerLibraryService(repository, auditService) {
       const profile = await repository.getCandidateProfile();
       const existing = (profile.answerLibrary ?? []).find((item) => item.id === answerId);
       if (!existing) {
-        throw new HttpError(404, 'Answer library item not found');
+        throw new HttpError(404, 'No se encontro la respuesta reutilizable solicitada.');
       }
 
       const updated = createAnswerLibraryEntry(
@@ -84,7 +84,7 @@ export function createAnswerLibraryService(repository, auditService) {
       const profile = await repository.getCandidateProfile();
       const existing = (profile.answerLibrary ?? []).find((item) => item.id === answerId);
       if (!existing) {
-        throw new HttpError(404, 'Answer library item not found');
+        throw new HttpError(404, 'No se encontro la respuesta reutilizable solicitada.');
       }
 
       const nextProfile = {
@@ -214,7 +214,7 @@ function matchCustomAnswer(answer, searchableText) {
     .filter((entry) => entry.length >= 3);
 
   const hit = keywords.find((keyword) => searchableText.includes(keyword));
-  return hit ? [`Matched custom keyword: ${hit}`] : [];
+  return hit ? [`Coincide con la palabra clave personalizada: ${hit}`] : [];
 }
 
 function mapUsageStatus(certainty) {

@@ -1,5 +1,6 @@
 import { matchingRules } from '../../config/matchingRules.js';
 import { JOB_STATUS } from '../../constants/jobStatus.js';
+import { userFacingText } from '../../constants/userFacingText.js';
 
 export function matchJobOffer(profile, parsedOffer, guardrails) {
   const confirmedTechnologies = new Set(
@@ -45,18 +46,22 @@ export function matchJobOffer(profile, parsedOffer, guardrails) {
     status,
     explanation: {
       matches: [
-        ...matchedTechnologies.map((tech) => `${tech} is confirmed in candidate profile`),
-        locationScore > 0 ? 'Modality aligns with preferred work modes' : null,
-        roleAlignmentScore > 0 ? 'Role aligns with target positions' : null,
+        ...matchedTechnologies.map((tech) => userFacingText.matching.technologyConfirmed(tech)),
+        locationScore > 0 ? userFacingText.matching.modalityAligned : null,
+        roleAlignmentScore > 0 ? userFacingText.matching.roleAligned : null,
       ].filter(Boolean),
       gaps: [
-        ...missingTechnologies.map((tech) => `${tech} is not confirmed in the profile`),
-        parsedOffer.jobOffer.englishRequirement === 'advanced' ? 'Advanced English requirement exceeds confirmed B1' : null,
-        parsedOffer.jobOffer.seniority === 'senior' ? 'Senior profile requested while candidate is targeting junior roles' : null,
+        ...missingTechnologies.map((tech) => userFacingText.matching.technologyMissing(tech)),
+        parsedOffer.jobOffer.englishRequirement === 'advanced'
+          ? userFacingText.matching.advancedEnglishGap
+          : null,
+        parsedOffer.jobOffer.seniority === 'senior'
+          ? userFacingText.matching.seniorityGap
+          : null,
       ].filter(Boolean),
       risks: [
         ...guardrails.approvals.map((item) => item.reason),
-        parsedOffer.jobOffer.flags.asksForSalary ? 'Salary expectations are sensitive and require review' : null,
+        parsedOffer.jobOffer.flags.asksForSalary ? userFacingText.matching.salarySensitive : null,
       ].filter(Boolean),
       unverified: excludedByRules,
     },

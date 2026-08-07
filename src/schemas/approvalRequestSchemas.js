@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const approvalRequestDecisionParamsSchema = z.object({
-  requestId: z.string().trim().min(1, 'Approval request id is required'),
+  requestId: z.string().trim().min(1, 'El id de la aprobacion es obligatorio.'),
 });
 
 export const approvalRequestDecisionInputSchema = z.object({

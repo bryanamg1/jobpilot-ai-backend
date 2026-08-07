@@ -7,6 +7,9 @@ const runtime = {
   browserSessions: [],
   approvalRequests: [],
   emailDrafts: [],
+  automationSettings: null,
+  applications: [],
+  agentRuns: [],
   audits: [],
 };
 

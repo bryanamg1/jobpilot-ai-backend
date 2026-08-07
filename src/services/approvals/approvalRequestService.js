@@ -152,7 +152,7 @@ function matchesApprovalFilters(entry, filters) {
 async function updateRequestDecision(repository, auditService, requestId, note, nextStatus) {
   const record = await repository.getApprovalRequestById(requestId);
   if (!record) {
-    throw new HttpError(404, 'Approval request not found');
+    throw new HttpError(404, 'No se encontro la solicitud de aprobacion.');
   }
 
   if (record.status === nextStatus) {

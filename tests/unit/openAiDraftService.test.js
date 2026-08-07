@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { buildFallbackDraft, createOpenAiDraftService } from '../../src/services/openai/openAiDraftService.js';
 
 const sampleJobAnalysis = {
@@ -17,7 +17,7 @@ const sampleJobAnalysis = {
   },
   match: {
     matchedTechnologies: ['Node.js', 'Express'],
-    approvals: [{ field: 'salary', reason: 'Salary details are sensitive and require approval' }],
+    approvals: [{ field: 'salary', reason: 'El salario es un dato sensible y requiere aprobacion manual.' }],
     excludedByRules: [],
   },
 };
@@ -37,8 +37,8 @@ describe('openAiDraftService', () => {
       responses: {
         parse: vi.fn().mockResolvedValue({
           output_parsed: {
-            subject: 'Application for Backend Developer - Bryan Marquez',
-            body: 'Hello,\n\nI am interested in the Backend Developer role.\n\nBest regards,\nBryan Marquez',
+            subject: 'Postulacion para Backend Developer - Bryan Marquez',
+            body: 'Hola,\n\nMe interesa la vacante de Backend Developer.\n\nSaludos,\nBryan Marquez',
             highlights: ['Node.js', 'Express'],
             factsUsed: [
               {
@@ -69,7 +69,8 @@ describe('openAiDraftService', () => {
     const draft = await service.generateDraft(sampleJobAnalysis);
 
     expect(draft.generation.mode).toBe('hybrid');
-    expect(draft.subject).toContain('Application for Backend Developer');
+    expect(draft.subject).toContain('Postulacion para Backend Developer');
     expect(client.responses.parse).toHaveBeenCalledTimes(1);
   });
 });
+

@@ -7,150 +7,168 @@ export const openApiDocument = {
   paths: {
     '/api/v1/health': {
       get: {
-        summary: 'Operational health check with storage, queue, integration and circuit-breaker status',
+        summary: 'Verifica el estado operativo con almacenamiento, cola, integraciones y circuit breakers',
         responses: {
           200: {
-            description: 'Service status',
+            description: 'Estado del servicio',
           },
         },
       },
     },
     '/api/v1/approvals': {
       get: {
-        summary: 'List sensitive approval requests for manual review',
+        summary: 'Lista solicitudes de aprobacion sensible para revision manual',
       },
     },
     '/api/v1/audits': {
       get: {
-        summary: 'List recent audit events, optionally filtered by entity',
+        summary: 'Lista eventos recientes de auditoria, con filtro opcional por entidad',
       },
     },
     '/api/v1/browser-sessions': {
       get: {
-        summary: 'List supervised browser sessions',
+        summary: 'Lista sesiones supervisadas del navegador',
       },
       post: {
-        summary: 'Start a new supervised LinkedIn browser session for Jobs, Feed or post-search',
+        summary: 'Inicia una nueva sesion supervisada de LinkedIn para Jobs, Feed o busqueda de publicaciones',
       },
     },
     '/api/v1/browser-sessions/{sessionId}': {
       get: {
-        summary: 'Get a supervised browser session',
+        summary: 'Obtiene una sesion supervisada del navegador',
       },
     },
     '/api/v1/browser-sessions/{sessionId}/refresh': {
       post: {
-        summary: 'Refresh the current supervised browser snapshot',
+        summary: 'Refresca la captura actual de la sesion supervisada',
       },
     },
     '/api/v1/browser-sessions/{sessionId}/navigate': {
       post: {
-        summary: 'Navigate a supervised browser session to another LinkedIn URL',
+        summary: 'Navega una sesion supervisada hacia otra URL de LinkedIn',
       },
     },
     '/api/v1/browser-sessions/{sessionId}/capture-job': {
       post: {
         summary:
-          'Capture the visible LinkedIn Jobs offer or hiring publication from a supervised session into the intake pipeline',
+          'Captura la oferta visible de LinkedIn Jobs o una publicacion de hiring desde una sesion supervisada hacia el pipeline de ingreso',
       },
     },
     '/api/v1/browser-sessions/{sessionId}/close': {
       post: {
-        summary: 'Close a supervised browser session',
+        summary: 'Cierra una sesion supervisada del navegador',
+      },
+    },
+    '/api/v1/automation/settings': {
+      get: {
+        summary: 'Obtiene la configuracion persistida del runner diario en DRY_RUN',
+      },
+      put: {
+        summary: 'Actualiza la configuracion persistida del runner diario en DRY_RUN',
+      },
+    },
+    '/api/v1/automation/runs': {
+      post: {
+        summary: 'Dispara un ciclo manual DRY_RUN usando la configuracion persistida',
       },
     },
     '/api/v1/approvals/{requestId}/approve': {
       post: {
-        summary: 'Approve a sensitive approval request',
+        summary: 'Aprueba una solicitud de aprobacion sensible',
       },
     },
     '/api/v1/approvals/{requestId}/reject': {
       post: {
-        summary: 'Reject a sensitive approval request',
+        summary: 'Rechaza una solicitud de aprobacion sensible',
       },
     },
     '/api/v1/answers': {
       get: {
-        summary: 'List reusable answer-library entries',
+        summary: 'Lista respuestas reutilizables de la biblioteca',
       },
       post: {
-        summary: 'Create a reusable answer-library entry',
+        summary: 'Crea una respuesta reutilizable en la biblioteca',
       },
     },
     '/api/v1/answers/{answerId}': {
       put: {
-        summary: 'Update a reusable answer-library entry',
+        summary: 'Actualiza una respuesta reutilizable de la biblioteca',
       },
       delete: {
-        summary: 'Delete a reusable answer-library entry',
+        summary: 'Elimina una respuesta reutilizable de la biblioteca',
       },
     },
     '/api/v1/jobs/manual': {
       post: {
-        summary: 'Create a manual job offer analysis',
+        summary: 'Crea un analisis manual de una vacante',
       },
     },
     '/api/v1/jobs': {
       get: {
-        summary: 'List analyzed job offers',
+        summary: 'Lista vacantes analizadas',
       },
     },
     '/api/v1/jobs/{jobId}/draft-preview': {
       post: {
-        summary: 'Generate a safe application draft preview for an analyzed job',
+        summary: 'Genera una vista previa segura de postulacion para una vacante analizada',
       },
     },
     '/api/v1/jobs/{jobId}/gmail-draft': {
       post: {
-        summary: 'Create a Gmail draft from a reviewed job draft preview',
+        summary: 'Crea un borrador de Gmail a partir de una vista previa ya revisada',
+      },
+    },
+    '/api/v1/jobs/{jobId}/dry-run-application': {
+      post: {
+        summary: 'Ejecuta una simulacion manual DRY_RUN para una vacante analizada',
       },
     },
     '/api/v1/jobs/{jobId}/approve': {
       post: {
-        summary: 'Approve a job that is awaiting human review',
+        summary: 'Aprueba una vacante que espera revision humana',
       },
     },
     '/api/v1/jobs/{jobId}/reject': {
       post: {
-        summary: 'Reject a job from the human approval queue',
+        summary: 'Rechaza una vacante desde la bandeja de aprobacion humana',
       },
     },
     '/api/v1/jobs/{jobId}/select-resume': {
       post: {
-        summary: 'Assign or clear the selected resume for a job offer',
+        summary: 'Asigna o limpia el CV seleccionado para una vacante',
       },
     },
     '/api/v1/resumes': {
       get: {
-        summary: 'List local resume metadata',
+        summary: 'Lista metadatos locales de CVs',
       },
       post: {
-        summary: 'Upload a local resume for manual later attachment',
+        summary: 'Sube un CV local para adjuntarlo manualmente mas adelante',
       },
     },
     '/api/v1/integrations/gmail/status': {
       get: {
-        summary: 'Get Gmail OAuth connection status',
+        summary: 'Obtiene el estado de conexion OAuth de Gmail',
       },
     },
     '/api/v1/integrations/gmail/auth-url': {
       get: {
-        summary: 'Generate the Gmail OAuth consent URL',
+        summary: 'Genera la URL de consentimiento OAuth de Gmail',
       },
     },
     '/api/v1/integrations/gmail/callback': {
       get: {
-        summary: 'Handle Gmail OAuth callback',
+        summary: 'Procesa el callback OAuth de Gmail',
       },
     },
     '/api/v1/integrations/gmail/alerts': {
       get: {
-        summary: 'List Gmail alert messages matching the configured query',
+        summary: 'Lista alertas de Gmail que coinciden con la consulta configurada',
       },
     },
     '/api/v1/dashboard': {
       get: {
-        summary: 'Dashboard summary',
+        summary: 'Resumen del dashboard',
       },
     },
   },

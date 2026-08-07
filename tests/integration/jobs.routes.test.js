@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -16,6 +16,9 @@ describe('jobs routes', () => {
     resetRepositoryForTests();
     const runtime = getInMemoryRuntime();
     runtime.profile = structuredClone(defaultCandidateProfile);
+    runtime.automationSettings = null;
+    runtime.applications = [];
+    runtime.agentRuns = [];
     runtime.resumes = [];
     runtime.offers = [];
     runtime.approvalRequests = [];
@@ -167,7 +170,7 @@ describe('jobs routes', () => {
 
     const approveResponse = await request(app)
       .post(`/api/v1/jobs/${createResponse.body.data.id}/approve`)
-      .send({ reason: 'Salary and scope reviewed manually.' });
+      .send({ reason: 'Salario y alcance revisados manualmente.' });
 
     expect(approveResponse.status).toBe(200);
     expect(approveResponse.body.data.match.status).toBe(JOB_STATUS.APPROVED);
@@ -185,7 +188,7 @@ describe('jobs routes', () => {
 
     const rejectResponse = await request(app)
       .post(`/api/v1/jobs/${createResponse.body.data.id}/reject`)
-      .send({ reason: 'Not a priority right now.' });
+      .send({ reason: 'No es una prioridad en este momento.' });
 
     expect(rejectResponse.status).toBe(200);
     expect(rejectResponse.body.data.match.status).toBe(JOB_STATUS.REJECTED);
@@ -222,7 +225,59 @@ describe('jobs routes', () => {
     expect(previewResponse.status).toBe(200);
     expect(previewResponse.body.data.selectedResume.label).toBe('Backend CV');
     expect(previewResponse.body.data.generation.warnings).toContain(
-      'Selected resume: Backend CV. Attach it manually in Gmail before sending.',
+      'CV seleccionado: Backend CV. Antes de enviar, adjuntalo manualmente en Gmail.',
     );
+  });
+
+  it('creates a manual dry-run application and records a duplicate on a repeated trigger', async () => {
+    const app = buildApp();
+
+    const createResponse = await request(app).post('/api/v1/jobs/manual').send({
+      rawText: [
+        'Junior Backend Developer - Remote at Acme Labs',
+        'Company: Acme Labs',
+        'Location: Remote LATAM',
+        'We are hiring a Junior Backend Developer with Node.js, Express, MySQL, Docker and REST APIs.',
+        'Requirements: JavaScript, testing, Git and remote collaboration.',
+        'Send your resume to jobs@acmelabs.com',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/backend-job-dry-run',
+      sourceLabel: 'Manual dry run',
+    });
+
+    const firstResponse = await request(app)
+      .post(`/api/v1/jobs/${createResponse.body.data.id}/dry-run-application`)
+      .send({});
+
+    expect(firstResponse.status).toBe(201);
+    expect(firstResponse.body.data.status).toBe('COMPLETED');
+    expect(firstResponse.body.data.metadata.result).toBe('COMPLETED');
+    expect(firstResponse.body.data.metadata.dryRunEvidence.recipient).toBe('jobs@acmelabs.com');
+
+    const duplicateResponse = await request(app)
+      .post(`/api/v1/jobs/${createResponse.body.data.id}/dry-run-application`)
+      .send({});
+
+    expect(duplicateResponse.status).toBe(201);
+    expect(duplicateResponse.body.data.status).toBe('BLOCKED_BY_CONFIGURATION');
+    expect(duplicateResponse.body.data.metadata.result).toBe('DUPLICATE');
+  });
+
+  it('keeps a dry-run application awaiting approval when sensitive approvals are unresolved', async () => {
+    const app = buildApp();
+
+    const createResponse = await request(app).post('/api/v1/jobs/manual').send({
+      rawText: fixture('manual-job-spanish.txt'),
+      sourceUrl: 'https://example.com/backend-job-awaiting-approval',
+      sourceLabel: 'Manual dry run approval',
+    });
+
+    const dryRunResponse = await request(app)
+      .post(`/api/v1/jobs/${createResponse.body.data.id}/dry-run-application`)
+      .send({});
+
+    expect(dryRunResponse.status).toBe(201);
+    expect(dryRunResponse.body.data.status).toBe('AWAITING_APPROVAL');
+    expect(dryRunResponse.body.data.metadata.result).toBe('AWAITING_APPROVAL');
   });
 });
