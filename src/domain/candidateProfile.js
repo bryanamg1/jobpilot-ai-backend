@@ -65,6 +65,63 @@ export const defaultCandidateProfileInput = {
     'Terraform experience',
     'Unverified years of experience',
   ],
+  answerLibrary: [
+    {
+      id: 'answer-location-buenos-aires',
+      kind: 'location',
+      question: 'Cual es tu ubicacion actual?',
+      answer: 'Bryan Marquez vive en Buenos Aires, Argentina.',
+      certainty: CERTAINTY.CONFIRMED,
+      source: 'candidate_profile_seed',
+      tags: ['location', 'argentina', 'remote'],
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:00.000Z',
+    },
+    {
+      id: 'answer-availability-full-time',
+      kind: 'availability',
+      question: 'Cual es tu disponibilidad actual?',
+      answer: 'Bryan Marquez esta disponible para oportunidades full time.',
+      certainty: CERTAINTY.CONFIRMED,
+      source: 'candidate_profile_seed',
+      tags: ['availability', 'full-time', 'schedule'],
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:00.000Z',
+    },
+    {
+      id: 'answer-english-b1',
+      kind: 'englishLevel',
+      question: 'Cual es tu nivel de ingles?',
+      answer: 'Nivel de ingles confirmado: B1.',
+      certainty: CERTAINTY.REQUIRES_APPROVAL,
+      source: 'candidate_profile_seed',
+      tags: ['english', 'language', 'b1'],
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:00.000Z',
+    },
+    {
+      id: 'answer-salary-usd-1000',
+      kind: 'salaryExpectation',
+      question: 'Cuales son tus expectativas salariales?',
+      answer: 'Expectativa salarial inicial: USD 1000 mensuales.',
+      certainty: CERTAINTY.REQUIRES_APPROVAL,
+      source: 'candidate_profile_seed',
+      tags: ['salary', 'compensation', 'usd'],
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:00.000Z',
+    },
+    {
+      id: 'answer-work-authorization-unknown',
+      kind: 'workAuthorization',
+      question: 'Tienes autorizacion para trabajar en este pais?',
+      answer: 'Requiere confirmacion manual. No respondas autorizacion laboral de forma automatica.',
+      certainty: CERTAINTY.UNKNOWN,
+      source: 'candidate_profile_seed',
+      tags: ['visa', 'work authorization', 'legal'],
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:00.000Z',
+    },
+  ],
 };
 
 export function createCandidateProfile(input, options = {}) {
@@ -98,6 +155,7 @@ export function createCandidateProfile(input, options = {}) {
     technologies: dedupeStrings(input.technologies),
     knowledgeAreas: dedupeStrings(input.knowledgeAreas ?? []),
     prohibitedClaims: dedupeStrings(input.prohibitedClaims ?? []),
+    answerLibrary: normalizeAnswerLibrary(input.answerLibrary ?? [], source),
   };
 
   normalized.facts = createCandidateFacts(normalized, source);
@@ -124,6 +182,30 @@ export function createCandidateFactRows(profileId, facts) {
     certainty: entry.certainty,
     source: entry.source,
   }));
+}
+
+export function createAnswerLibraryEntry(input, options = {}) {
+  const timestamp = options.timestamp ?? new Date().toISOString();
+
+  return {
+    id: options.id ?? input.id ?? randomUUID(),
+    kind: String(input.kind ?? 'custom').trim() || 'custom',
+    question: String(input.question ?? '').trim(),
+    answer: String(input.answer ?? '').trim(),
+    certainty: input.certainty ?? CERTAINTY.REQUIRES_APPROVAL,
+    source: String(input.source ?? options.source ?? 'candidate_profile_seed').trim(),
+    tags: dedupeStrings(input.tags ?? []),
+    createdAt: input.createdAt ?? options.createdAt ?? timestamp,
+    updatedAt: options.updatedAt ?? input.updatedAt ?? timestamp,
+  };
+}
+
+function normalizeAnswerLibrary(values, source) {
+  return values.map((entry) =>
+    createAnswerLibraryEntry(entry, {
+      source,
+    }),
+  );
 }
 
 function fact(key, value, source) {

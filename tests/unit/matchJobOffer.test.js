@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defaultCandidateProfile } from '../../src/config/candidateProfileSeed.js';
@@ -21,7 +21,7 @@ describe('matchJobOffer', () => {
 
     expect(match.score).toBeGreaterThanOrEqual(65);
     expect(match.status).toBe('AWAITING_APPROVAL');
-    expect(match.explanation.risks).toContain('Salary details are sensitive and require approval');
+    expect(match.explanation.risks).toContain('El salario es un dato sensible y requiere aprobacion manual.');
     expect(match.matchedTechnologies).toContain('Node.js');
   });
 
@@ -38,3 +38,4 @@ describe('matchJobOffer', () => {
     expect(match.excludedByRules.length).toBeGreaterThan(0);
   });
 });
+

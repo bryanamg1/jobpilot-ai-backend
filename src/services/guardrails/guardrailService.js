@@ -1,4 +1,5 @@
 import { CERTAINTY } from '../../constants/certainty.js';
+import { userFacingText } from '../../constants/userFacingText.js';
 
 export function evaluateGuardrails(parsedOffer, profile) {
   const approvals = [];
@@ -6,21 +7,21 @@ export function evaluateGuardrails(parsedOffer, profile) {
   const text = parsedOffer.source.originalText.toLowerCase();
 
   if (parsedOffer.jobOffer.salary) {
-    approvals.push(flag('salary', CERTAINTY.REQUIRES_APPROVAL, 'Salary details are sensitive and require approval'));
+    approvals.push(flag('salary', CERTAINTY.REQUIRES_APPROVAL, userFacingText.guardrails.salary));
   }
 
   if (parsedOffer.jobOffer.flags.requiresVisa) {
     approvals.push(
-      flag('workAuthorization', CERTAINTY.REQUIRES_APPROVAL, 'Work authorization must be reviewed manually'),
+      flag('workAuthorization', CERTAINTY.REQUIRES_APPROVAL, userFacingText.guardrails.workAuthorization),
     );
   }
 
   if (parsedOffer.jobOffer.flags.requiresRelocation) {
-    approvals.push(flag('relocation', CERTAINTY.REQUIRES_APPROVAL, 'Relocation requirements need explicit approval'));
+    approvals.push(flag('relocation', CERTAINTY.REQUIRES_APPROVAL, userFacingText.guardrails.relocation));
   }
 
   if (parsedOffer.jobOffer.flags.requiresTravel) {
-    approvals.push(flag('travel', CERTAINTY.REQUIRES_APPROVAL, 'Travel availability is sensitive and must be reviewed'));
+    approvals.push(flag('travel', CERTAINTY.REQUIRES_APPROVAL, userFacingText.guardrails.travel));
   }
 
   if (parsedOffer.jobOffer.flags.requiresImmediateAvailability) {
@@ -28,17 +29,17 @@ export function evaluateGuardrails(parsedOffer, profile) {
       flag(
         'availabilityImmediate',
         CERTAINTY.REQUIRES_APPROVAL,
-        'Immediate availability must be confirmed manually before any draft is prepared',
+        userFacingText.guardrails.immediateAvailability,
       ),
     );
   }
 
   if (parsedOffer.jobOffer.flags.legalQuestions) {
-    blocked.push(flag('legalQuestions', CERTAINTY.PROHIBITED, 'Legal screening answers cannot be auto-filled'));
+    blocked.push(flag('legalQuestions', CERTAINTY.PROHIBITED, userFacingText.guardrails.legalQuestions));
   }
 
   if (parsedOffer.jobOffer.englishRequirement === 'advanced' && profile.englishLevel !== 'C1') {
-    blocked.push(flag('englishRequirement', CERTAINTY.PROHIBITED, 'Offer requires advanced English beyond confirmed B1'));
+    blocked.push(flag('englishRequirement', CERTAINTY.PROHIBITED, userFacingText.guardrails.advancedEnglish));
   }
 
   if (parsedOffer.jobOffer.englishRequirement === 'intermediate' && profile.englishLevel === 'B1') {
@@ -46,7 +47,7 @@ export function evaluateGuardrails(parsedOffer, profile) {
       flag(
         'englishLevel',
         CERTAINTY.REQUIRES_APPROVAL,
-        'Intermediate English requirements should be reviewed against the confirmed B1 level',
+        userFacingText.guardrails.intermediateEnglish,
       ),
     );
   }
@@ -57,7 +58,7 @@ export function evaluateGuardrails(parsedOffer, profile) {
       flag(
         'yearsOfExperience',
         CERTAINTY.PROHIBITED,
-        `Offer requests ${yearsRequirement}+ years of experience that are not confirmed in the candidate profile`,
+        userFacingText.guardrails.yearsOfExperience(yearsRequirement),
       ),
     );
   }
@@ -73,7 +74,7 @@ export function evaluateGuardrails(parsedOffer, profile) {
       flag(
         'technologyClaims',
         CERTAINTY.PROHIBITED,
-        `Offer depends on a technology with unverified experience: ${claim}`,
+        userFacingText.guardrails.technologyClaim(claim),
       ),
     );
   }

@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "vitest run --pool threads",
-    "test:watch": "vitest --pool threads",
+    "test": "vitest run --pool threads --maxWorkers=1",
+    "test:watch": "vitest --pool threads --maxWorkers=1",
     "lint": "eslint .",
     "format": "prettier --check .",
     "check": "npm run lint && npm run test",

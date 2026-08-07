@@ -16,5 +16,9 @@ describe('health routes', () => {
     expect(response.body.status).toBe('ok');
     expect(response.body.storageMode).toBe('memory');
     expect(response.body.dependencies.storage.status).toBe('ok');
+    expect(response.body.dependencies.queue.mode).toBe('inline');
+    expect(response.body.integrations.openai.status).toBe('disabled');
+    expect(response.body.reliability.circuits.openai.state).toBe('closed');
+    expect(response.body.runtime.requestCorrelation).toBe(true);
   });
 });
