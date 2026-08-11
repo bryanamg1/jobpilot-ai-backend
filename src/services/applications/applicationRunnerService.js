@@ -16,12 +16,15 @@ export function createApplicationRunnerService(
   auditService,
   jobDraftService,
   automationSettingsService,
+  options = {},
 ) {
+  const killSwitchEnabled = Boolean(options.killSwitchEnabled);
+
   return {
     async runJobDryRun(jobId, input = {}) {
       const jobAnalysis = await repository.getJobAnalysisById(jobId);
       if (!jobAnalysis) {
-        throw new HttpError(404, 'Job analysis not found');
+        throw new HttpError(404, userFacingText.applicationRunner.jobAnalysisNotFound);
       }
 
       const settings = await automationSettingsService.getSettings();
@@ -29,7 +32,7 @@ export function createApplicationRunnerService(
       const sourcePolicy = resolveSourcePolicy(settings, sourceType);
       const existing = await repository.findLatestApplicationByJobId(jobId);
       if (existing && !isTerminalApplicationStatus(existing.status)) {
-        throw new HttpError(409, 'There is already an active application run for this job', {
+        throw new HttpError(409, userFacingText.applicationRunner.activeRunExists, {
           applicationId: existing.id,
           status: existing.status,
         });
@@ -42,11 +45,23 @@ export function createApplicationRunnerService(
         dateKey: buildDateKey(settings.timezone),
       });
 
-      advanceApplication(application, APPLICATION_STATUS.DISCOVERED, 'Job selected for dry run');
-      advanceApplication(application, APPLICATION_STATUS.DEDUPLICATING, 'Checking existing applications for duplicates');
+      advanceApplication(
+        application,
+        APPLICATION_STATUS.DISCOVERED,
+        userFacingText.applicationRunner.selectedForDryRun,
+      );
+      advanceApplication(
+        application,
+        APPLICATION_STATUS.DEDUPLICATING,
+        userFacingText.applicationRunner.deduplicating,
+      );
 
       if (existing && isTerminalApplicationStatus(existing.status)) {
-        advanceApplication(application, APPLICATION_STATUS.BLOCKED_BY_CONFIGURATION, 'Duplicate application already recorded');
+        advanceApplication(
+          application,
+          APPLICATION_STATUS.BLOCKED_BY_CONFIGURATION,
+          userFacingText.applicationRunner.duplicateRecorded,
+        );
         application.metadata.result = 'DUPLICATE';
         const saved = await repository.saveApplication(application);
         await recordApplicationAudit(auditService, saved, 'application.duplicate_detected');
@@ -54,14 +69,22 @@ export function createApplicationRunnerService(
       }
 
       if (input.trigger === APPLICATION_TRIGGER.SCHEDULED && sourcePolicy === SOURCE_POLICY.MANUAL_ONLY) {
-        advanceApplication(application, APPLICATION_STATUS.BLOCKED_BY_SOURCE_POLICY, 'Source policy blocks automatic preparation');
+        advanceApplication(
+          application,
+          APPLICATION_STATUS.BLOCKED_BY_SOURCE_POLICY,
+          userFacingText.applicationRunner.sourcePolicyBlocked,
+        );
         application.metadata.result = 'BLOCKED_BY_SOURCE_POLICY';
         const saved = await repository.saveApplication(application);
         await recordApplicationAudit(auditService, saved, 'application.blocked_source_policy');
         return saved;
       }
 
-      advanceApplication(application, APPLICATION_STATUS.ELIGIBILITY_CHECK, 'Evaluating score, rules and automation filters');
+      advanceApplication(
+        application,
+        APPLICATION_STATUS.ELIGIBILITY_CHECK,
+        userFacingText.applicationRunner.eligibilityCheck,
+      );
       const eligibility = evaluateEligibility(jobAnalysis, settings);
       application.metadata.eligibility = eligibility;
 
@@ -73,7 +96,11 @@ export function createApplicationRunnerService(
         return saved;
       }
 
-      advanceApplication(application, APPLICATION_STATUS.PREPARING_APPLICATION, 'Generating preview, answers and resume selection');
+      advanceApplication(
+        application,
+        APPLICATION_STATUS.PREPARING_APPLICATION,
+        userFacingText.applicationRunner.preparing,
+      );
       const preview = await jobDraftService.createPreview(jobId);
       const resumeSelection = await resolveResumeSelection(repository, jobAnalysis);
       application.metadata.preview = summarizePreview(preview);
@@ -87,17 +114,36 @@ export function createApplicationRunnerService(
         return saved;
       }
 
-      if ((preview.pendingApprovalRequests ?? []).length || (preview.rejectedApprovalRequests ?? []).length) {
-        advanceApplication(application, APPLICATION_STATUS.AWAITING_APPROVAL, 'Sensitive approvals must be resolved before dry-run completion');
+      if (
+        settings.requireHumanApproval &&
+        ((preview.pendingApprovalRequests ?? []).length || (preview.rejectedApprovalRequests ?? []).length)
+      ) {
+        advanceApplication(
+          application,
+          APPLICATION_STATUS.AWAITING_APPROVAL,
+          userFacingText.applicationRunner.approvalsPending,
+        );
         application.metadata.result = 'AWAITING_APPROVAL';
         const saved = await repository.saveApplication(application);
         await recordApplicationAudit(auditService, saved, 'application.awaiting_approval');
         return saved;
       }
 
-      advanceApplication(application, APPLICATION_STATUS.READY_TO_SUBMIT, 'Dry-run produced a complete outbound preview');
-      advanceApplication(application, APPLICATION_STATUS.VERIFYING, 'Recording dry-run evidence and simulated submission');
-      advanceApplication(application, APPLICATION_STATUS.COMPLETED, 'Dry-run completed without sending a real application');
+      advanceApplication(
+        application,
+        APPLICATION_STATUS.READY_TO_SUBMIT,
+        userFacingText.applicationRunner.previewReady,
+      );
+      advanceApplication(
+        application,
+        APPLICATION_STATUS.VERIFYING,
+        userFacingText.applicationRunner.recordingEvidence,
+      );
+      advanceApplication(
+        application,
+        APPLICATION_STATUS.COMPLETED,
+        userFacingText.applicationRunner.completed,
+      );
       application.metadata.result = 'COMPLETED';
       application.metadata.dryRunEvidence = {
         recipient: preview.recipient,
@@ -121,15 +167,22 @@ export function createApplicationRunnerService(
       });
 
       try {
+        if (killSwitchEnabled) {
+          run.status = AGENT_RUN_STATUS.SKIPPED;
+          run.finishedAt = new Date().toISOString();
+          run.metadata.summary = { reason: userFacingText.applicationRunner.killSwitchEnabled };
+          return repository.updateAgentRun(run);
+        }
+
         if (!settings.enabled) {
           run.status = AGENT_RUN_STATUS.SKIPPED;
           run.finishedAt = new Date().toISOString();
-          run.metadata.summary = { reason: 'Automation is disabled' };
+          run.metadata.summary = { reason: userFacingText.applicationRunner.automationDisabled };
           return repository.updateAgentRun(run);
         }
 
         if (settings.mode !== AUTOMATION_MODE.DRY_RUN) {
-          throw new HttpError(409, 'Scheduled execution is limited to DRY_RUN in Phase 9', {
+          throw new HttpError(409, userFacingText.applicationRunner.scheduledPhaseLimit, {
             mode: settings.mode,
           });
         }
@@ -145,7 +198,7 @@ export function createApplicationRunnerService(
         if (remainingSlots === 0) {
           run.status = AGENT_RUN_STATUS.SKIPPED;
           run.finishedAt = new Date().toISOString();
-          run.metadata.summary = { reason: 'Daily application limit already reached' };
+          run.metadata.summary = { reason: userFacingText.applicationRunner.dailyLimitReached };
           const saved = await repository.updateAgentRun(run);
           await automationSettingsService.markTriggered({ triggeredAt: run.finishedAt });
           return saved;
@@ -212,7 +265,7 @@ function buildApplicationRecord(jobAnalysis, options) {
       jobTitle: jobAnalysis.jobOffer.title,
       company: jobAnalysis.jobOffer.company,
       sourceType: jobAnalysis.source?.type ?? 'MANUAL',
-      sourceLabel: jobAnalysis.source?.label ?? 'Unknown source',
+      sourceLabel: jobAnalysis.source?.label ?? userFacingText.applicationRunner.unknownSource,
       sourceUrl: jobAnalysis.source?.originalUrl ?? null,
       score: jobAnalysis.match.score,
       matchStatus: jobAnalysis.match.status,
@@ -221,7 +274,7 @@ function buildApplicationRecord(jobAnalysis, options) {
         {
           status: APPLICATION_STATUS.SCHEDULE_TRIGGERED,
           at: now,
-          note: 'Application runner started',
+          note: userFacingText.applicationRunner.runStarted,
         },
       ],
     },
@@ -269,7 +322,7 @@ function evaluateEligibility(jobAnalysis, settings) {
     return {
       eligible: false,
       status: APPLICATION_STATUS.REJECTED_BY_RULES,
-      reason: 'Job was already rejected by rules or manual review',
+      reason: userFacingText.applicationRunner.rejectedByRules,
     };
   }
 
@@ -277,7 +330,10 @@ function evaluateEligibility(jobAnalysis, settings) {
     return {
       eligible: false,
       status: APPLICATION_STATUS.BLOCKED_BY_CONFIGURATION,
-      reason: `Job score ${jobAnalysis.match.score} is below the automation minimum`,
+      reason: userFacingText.applicationRunner.belowMinimumScore(
+        jobAnalysis.match.score,
+        settings.minimumMatchScore,
+      ),
     };
   }
 
@@ -286,7 +342,7 @@ function evaluateEligibility(jobAnalysis, settings) {
     return {
       eligible: false,
       status: APPLICATION_STATUS.BLOCKED_BY_CONFIGURATION,
-      reason: 'Company is blocked by automation settings',
+      reason: userFacingText.applicationRunner.companyBlocked,
     };
   }
 
@@ -295,14 +351,14 @@ function evaluateEligibility(jobAnalysis, settings) {
     return {
       eligible: false,
       status: APPLICATION_STATUS.BLOCKED_BY_CONFIGURATION,
-      reason: 'Job contains blocked keywords',
+      reason: userFacingText.applicationRunner.blockedKeyword,
     };
   }
 
   return {
     eligible: true,
     status: APPLICATION_STATUS.ELIGIBILITY_CHECK,
-    reason: 'Job passed automation filters',
+    reason: userFacingText.applicationRunner.passedFilters,
   };
 }
 
@@ -418,11 +474,20 @@ function summarizeRun(processed = []) {
       if (item.status === APPLICATION_STATUS.AWAITING_APPROVAL) {
         summary.awaitingApproval += 1;
       }
+      if (item.status === APPLICATION_STATUS.BLOCKED_BY_CONFIGURATION) {
+        summary.blockedByConfiguration += 1;
+      }
       if (item.status === APPLICATION_STATUS.BLOCKED_BY_SOURCE_POLICY) {
         summary.blockedByPolicy += 1;
       }
       if (item.status === APPLICATION_STATUS.REJECTED_BY_RULES) {
         summary.rejectedByRules += 1;
+      }
+      if (item.result === 'DUPLICATE') {
+        summary.duplicates += 1;
+      }
+      if (item.status === APPLICATION_STATUS.FAILED) {
+        summary.failed += 1;
       }
       return summary;
     },
@@ -430,8 +495,11 @@ function summarizeRun(processed = []) {
       total: 0,
       completed: 0,
       awaitingApproval: 0,
+      blockedByConfiguration: 0,
       blockedByPolicy: 0,
       rejectedByRules: 0,
+      duplicates: 0,
+      failed: 0,
     },
   );
 }

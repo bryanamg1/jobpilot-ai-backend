@@ -5,10 +5,18 @@ export function createHealthService(repository, options = {}) {
   const gmailIntegrationService = options.gmailIntegrationService ?? null;
   const operationsQueueService = options.operationsQueueService ?? null;
   const reliabilityRegistry = options.reliabilityRegistry ?? null;
+  const automationSettingsService = options.automationSettingsService ?? null;
+  const automationSchedulerService = options.automationSchedulerService ?? null;
 
   return {
     async getStatus() {
       const dependency = await repository.ping();
+      const automationSettings = await automationSettingsService?.getSettings?.();
+      const schedulerStatus = automationSchedulerService?.getStatus?.() ?? {
+        running: false,
+        intervalMs: null,
+        killSwitchEnabled: Boolean(config.AUTOMATION_KILL_SWITCH),
+      };
       const gmailStatus = gmailIntegrationService ? await gmailIntegrationService.getStatus() : null;
       const queueStatus = operationsQueueService?.getStatus() ?? null;
       const reliabilityStatus = reliabilityRegistry?.getStatus() ?? {};
@@ -20,7 +28,7 @@ export function createHealthService(repository, options = {}) {
           : config.OPENAI_FEATURE_MODE === 'assist' && config.OPENAI_API_KEY
             ? 'ready'
             : config.OPENAI_FEATURE_MODE === 'assist'
-              ? 'missing_api_key'
+              ? 'unavailable'
               : 'disabled',
       };
       const overallStatus = [
@@ -44,13 +52,40 @@ export function createHealthService(repository, options = {}) {
                 status: gmailStatus.configured
                   ? gmailStatus.connected
                     ? 'connected'
-                    : 'configured'
-                  : 'not_configured',
+                    : 'disconnected'
+                  : 'unavailable',
                 connected: gmailStatus.connected,
                 configured: gmailStatus.configured,
               }
             : null,
           openai: openAiStatus,
+        },
+        services: {
+          api: {
+            status: 'online',
+            port: config.PORT,
+          },
+          mysql: {
+            status: dependency.status === 'ok' ? 'connected' : 'error',
+            mode: repository.mode,
+          },
+          redis: {
+            status: config.REDIS_URL ? 'configured' : 'unavailable',
+          },
+        },
+        automation: {
+          enabled: Boolean(automationSettings?.enabled),
+          mode: automationSettings?.mode ?? null,
+          requireHumanApproval: automationSettings?.requireHumanApproval ?? true,
+          lastTriggeredAt: automationSettings?.lastTriggeredAt ?? null,
+          scheduler: {
+            status: schedulerStatus.running ? 'running' : 'stopped',
+            intervalMs: schedulerStatus.intervalMs,
+          },
+          killSwitch: {
+            enabled: Boolean(config.AUTOMATION_KILL_SWITCH),
+            scope: 'runner_and_scheduler',
+          },
         },
         reliability: {
           circuits: reliabilityStatus,

@@ -4,6 +4,7 @@ import {
   AUTOMATION_SETTINGS_ID,
   DEFAULT_AUTOMATION_SETTINGS,
 } from '../../constants/automation.js';
+import { userFacingText } from '../../constants/userFacingText.js';
 import { HttpError } from '../../lib/httpError.js';
 
 export function createAutomationSettingsService(repository, auditService) {
@@ -69,7 +70,11 @@ function createDefaultSettingsRecord() {
 
 function validateRequestedMode(mode) {
   if (mode === AUTOMATION_MODE.AUTOMATIC) {
-    throw new HttpError(409, 'AUTOMATIC mode is not enabled in Phase 9', {
+    throw new HttpError(409, userFacingText.automation.automaticModeUnavailable, {
+      code: 'AUTOMATION_MODE_UNAVAILABLE',
+      title: userFacingText.automation.automaticModeConflictTitle,
+      cause: userFacingText.automation.automaticModeConflictCause,
+      action: userFacingText.automation.automaticModeConflictAction,
       supportedModes: [AUTOMATION_MODE.MANUAL, AUTOMATION_MODE.ASSISTED, AUTOMATION_MODE.DRY_RUN],
     });
   }

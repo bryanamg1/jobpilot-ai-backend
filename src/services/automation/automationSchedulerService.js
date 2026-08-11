@@ -1,15 +1,17 @@
 import { AUTOMATION_MODE } from '../../constants/automation.js';
+import { userFacingText } from '../../constants/userFacingText.js';
 
 const DEFAULT_INTERVAL_MS = 60_000;
 
 export function createAutomationSchedulerService(automationSettingsService, applicationRunnerService, options = {}) {
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const nowFn = options.nowFn ?? (() => new Date());
+  const killSwitchEnabled = Boolean(options.killSwitchEnabled);
   let timer = null;
 
   return {
     start() {
-      if (timer) {
+      if (timer || killSwitchEnabled) {
         return;
       }
 
@@ -28,6 +30,10 @@ export function createAutomationSchedulerService(automationSettingsService, appl
     },
 
     async evaluate() {
+      if (killSwitchEnabled) {
+        return null;
+      }
+
       const settings = await automationSettingsService.getSettings();
       if (!settings.enabled || settings.mode !== AUTOMATION_MODE.DRY_RUN) {
         return null;
@@ -39,8 +45,16 @@ export function createAutomationSchedulerService(automationSettingsService, appl
 
       return applicationRunnerService.runScheduledCycle({
         trigger: 'SCHEDULED',
-        reason: 'Scheduled DRY_RUN cycle',
+        reason: userFacingText.applicationRunner.scheduledCycle,
       });
+    },
+
+    getStatus() {
+      return {
+        running: Boolean(timer),
+        intervalMs,
+        killSwitchEnabled,
+      };
     },
   };
 }

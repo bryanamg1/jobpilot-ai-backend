@@ -3,6 +3,18 @@ export const userFacingText = {
     jobAnalysisNotFound: 'No se encontro el analisis de la vacante.',
     resourceNotFound: 'No se encontro el recurso solicitado.',
     unexpectedServerError: 'Ocurrio un error inesperado en el servidor.',
+    invalidRequest: 'Los datos enviados no son validos.',
+  },
+  automation: {
+    automaticModeUnavailable: 'El modo automatico todavia no esta habilitado en esta fase.',
+    automaticModeConflictTitle: 'Modo de automatizacion no disponible',
+    automaticModeConflictCause:
+      'La interfaz envio el modo AUTOMATIC, pero en la fase actual solo se permite trabajo manual, asistido o simulacion segura.',
+    automaticModeConflictAction:
+      'Guarda la configuracion usando Manual, Asistido o Simulacion segura.',
+    startTimeFormat: 'La hora de inicio debe usar el formato HH:MM.',
+    killSwitchEnabled:
+      'El kill switch de automatizacion esta activo y bloquea las ejecuciones del runner.',
   },
   draft: {
     blockedWarning: 'draft_blocked: la vacante contiene requisitos prohibidos o no verificados',
@@ -55,5 +67,33 @@ export const userFacingText = {
     seniorityGap:
       'La vacante apunta a seniority senior y el perfil actual esta orientado a roles junior.',
     salarySensitive: 'La expectativa salarial requiere revision manual antes de usarse.',
+  },
+  applicationRunner: {
+    jobAnalysisNotFound: 'No se encontro el analisis de la vacante para esta simulacion.',
+    activeRunExists: 'Ya existe una simulacion activa para esta vacante.',
+    selectedForDryRun: 'Vacante seleccionada para la simulacion segura.',
+    deduplicating: 'Verificando si ya existe una postulacion registrada para esta vacante.',
+    duplicateRecorded: 'Ya existe una postulacion registrada para esta vacante.',
+    sourcePolicyBlocked: 'La politica de la fuente impide preparar esta vacante de forma automatizada.',
+    eligibilityCheck: 'Evaluando score, reglas y filtros de automatizacion.',
+    rejectedByRules: 'La vacante ya fue descartada por reglas o revision manual.',
+    belowMinimumScore: (score, minimum) =>
+      `El score ${score} esta por debajo del minimo configurado (${minimum}).`,
+    companyBlocked: 'La empresa esta bloqueada por la configuracion de automatizacion.',
+    blockedKeyword: 'La vacante contiene palabras bloqueadas por la automatizacion.',
+    passedFilters: 'La vacante supero los filtros de automatizacion.',
+    preparing: 'Generando vista previa, respuestas sugeridas y seleccion de CV.',
+    approvalsPending: 'Hay aprobaciones sensibles pendientes antes de completar la simulacion segura.',
+    previewReady: 'La simulacion genero una vista previa completa para revisar.',
+    recordingEvidence: 'Registrando evidencia de la simulacion segura.',
+    completed: 'La simulacion segura finalizo sin enviar ninguna postulacion real.',
+    scheduledCycle: 'Ciclo programado de simulacion segura',
+    runStarted: 'El runner de postulaciones inicio la simulacion.',
+    automationDisabled: 'La automatizacion esta deshabilitada.',
+    scheduledPhaseLimit: 'La ejecucion programada solo admite simulacion segura en la fase actual.',
+    dailyLimitReached: 'Ya se alcanzo el limite diario de postulaciones.',
+    unknownSource: 'Fuente no identificada',
+    killSwitchEnabled:
+      'El kill switch de automatizacion esta activo. No se ejecutara ninguna corrida automatizada.',
   },
 };

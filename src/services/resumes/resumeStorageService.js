@@ -41,15 +41,9 @@ export function createResumeStorageService(options = {}) {
         throw new HttpError(413, `El archivo del CV supera el limite permitido de ${config.RESUME_MAX_BYTES} bytes.`);
       }
 
-      await mkdir(absoluteStorageDir, { recursive: true });
-
       const storedFileName = `${randomUUID()}${extension}`;
       const relativePath = `${normalizedStorageDir}/${storedFileName}`;
-      const absolutePath = path.resolve(process.cwd(), relativePath);
-
-      await writeFile(absolutePath, buffer);
-
-      return {
+      const payload = {
         relativePath,
         storedFileName,
         originalFileName: normalizedFileName,
@@ -59,6 +53,17 @@ export function createResumeStorageService(options = {}) {
         checksumSha256: createHash('sha256').update(buffer).digest('hex'),
         uploadedAt: new Date().toISOString(),
       };
+
+      if (config.isTest) {
+        return payload;
+      }
+
+      await mkdir(absoluteStorageDir, { recursive: true });
+      const absolutePath = path.resolve(process.cwd(), relativePath);
+
+      await writeFile(absolutePath, buffer);
+
+      return payload;
     },
   };
 }

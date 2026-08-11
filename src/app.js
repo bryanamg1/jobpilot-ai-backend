@@ -77,7 +77,9 @@ export function buildApp(options = {}) {
     });
   const applicationRunnerService =
     options.applicationRunnerService ??
-    createApplicationRunnerService(repository, auditService, jobDraftService, automationSettingsService);
+    createApplicationRunnerService(repository, auditService, jobDraftService, automationSettingsService, {
+      killSwitchEnabled: env.AUTOMATION_KILL_SWITCH,
+    });
   const jobApprovalService =
     options.jobApprovalService ?? createJobApprovalService(repository, auditService);
   const browserSessionService =
@@ -90,6 +92,11 @@ export function buildApp(options = {}) {
     createGmailIntegrationService(repository, auditService, jobDraftService, {
       breaker: reliabilityRegistry.getBreaker('gmail'),
     });
+  const automationSchedulerService =
+    options.automationSchedulerService ??
+    createAutomationSchedulerService(automationSettingsService, applicationRunnerService, {
+      killSwitchEnabled: env.AUTOMATION_KILL_SWITCH,
+    });
   const dashboardService =
     options.dashboardService ??
     createDashboardService(repository, {
@@ -101,12 +108,11 @@ export function buildApp(options = {}) {
       gmailIntegrationService,
       operationsQueueService,
       reliabilityRegistry,
+      automationSettingsService,
+      automationSchedulerService,
     });
   const profileService = options.profileService ?? createProfileService(repository, auditService);
   const resumeService = options.resumeService ?? createResumeService(repository, auditService);
-  const automationSchedulerService =
-    options.automationSchedulerService ??
-    createAutomationSchedulerService(automationSettingsService, applicationRunnerService);
 
   const app = express();
 
@@ -196,7 +202,7 @@ export function buildApp(options = {}) {
   app.use(notFoundHandler);
   app.use(errorHandler);
 
-  if (!env.isTest && options.startAutomationScheduler !== false) {
+  if (!env.isTest && !env.AUTOMATION_KILL_SWITCH && options.startAutomationScheduler !== false) {
     automationSchedulerService.start();
   }
 

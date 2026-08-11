@@ -10,6 +10,10 @@ const envSchema = z.object({
   FRONTEND_ORIGIN: z.string().default('http://localhost:5173'),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
   RATE_LIMIT_MAX: z.coerce.number().default(60),
+  AUTOMATION_KILL_SWITCH: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   STORAGE_MODE: z.enum(['auto', 'memory', 'mysql']).default('auto'),
   MYSQL_HOST: z.string().optional(),
   MYSQL_PORT: z.coerce.number().default(3306),
