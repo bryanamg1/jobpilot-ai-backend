@@ -17,6 +17,12 @@ describe('health routes', () => {
     expect(response.body.storageMode).toBe('memory');
     expect(response.body.dependencies.storage.status).toBe('ok');
     expect(response.body.dependencies.queue.mode).toBe('inline');
+    expect(response.body.services.api.status).toBe('online');
+    expect(response.body.services.mysql.status).toBe('connected');
+    expect(response.body.services.redis.status).toBe('unavailable');
+    expect(response.body.automation.scheduler.status).toBe('stopped');
+    expect(response.body.automation.enabled).toBe(false);
+    expect(response.body.automation.killSwitch.enabled).toBe(false);
     expect(response.body.integrations.openai.status).toBe('disabled');
     expect(response.body.reliability.circuits.openai.state).toBe('closed');
     expect(response.body.runtime.requestCorrelation).toBe(true);

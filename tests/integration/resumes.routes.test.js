@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
+import { defaultCandidateProfile } from '../../src/config/candidateProfileSeed.js';
 import { getInMemoryRuntime } from '../../src/repositories/inMemory/inMemoryRuntime.js';
 import { resetRepositoryForTests } from '../../src/repositories/repositoryFactory.js';
 
@@ -10,6 +11,7 @@ describe('resumes routes', () => {
   beforeEach(() => {
     resetRepositoryForTests();
     const runtime = getInMemoryRuntime();
+    runtime.profile = structuredClone(defaultCandidateProfile);
     runtime.resumes = [];
     runtime.audits = [];
   });

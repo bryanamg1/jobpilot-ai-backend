@@ -11,10 +11,12 @@ describe('healthService', () => {
     };
     const healthService = createHealthService(repository, {
       config: {
+        PORT: 4300,
         OPENAI_FEATURE_MODE: 'assist',
         OPENAI_API_KEY: 'test-key',
         GOOGLE_CLIENT_ID: 'client-id',
         REDIS_URL: '',
+        AUTOMATION_KILL_SWITCH: true,
       },
       gmailIntegrationService: {
         async getStatus() {
@@ -48,13 +50,38 @@ describe('healthService', () => {
           };
         },
       },
+      automationSettingsService: {
+        async getSettings() {
+          return {
+            enabled: true,
+            mode: 'DRY_RUN',
+            requireHumanApproval: true,
+            lastTriggeredAt: null,
+          };
+        },
+      },
+      automationSchedulerService: {
+        getStatus() {
+          return {
+            running: true,
+            intervalMs: 60_000,
+            killSwitchEnabled: true,
+          };
+        },
+      },
     });
 
     const status = await healthService.getStatus();
 
+    expect(status.services.api.status).toBe('online');
+    expect(status.services.mysql.status).toBe('connected');
+    expect(status.services.redis.status).toBe('unavailable');
     expect(status.dependencies.queue.mode).toBe('inline');
-    expect(status.integrations.gmail.status).toBe('configured');
+    expect(status.integrations.gmail.status).toBe('disconnected');
     expect(status.integrations.openai.status).toBe('ready');
+    expect(status.automation.enabled).toBe(true);
+    expect(status.automation.scheduler.status).toBe('running');
+    expect(status.automation.killSwitch.enabled).toBe(true);
     expect(status.reliability.circuits.gmail.state).toBe('closed');
     expect(status.runtime.requestCorrelation).toBe(true);
   });

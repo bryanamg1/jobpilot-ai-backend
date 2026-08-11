@@ -154,4 +154,41 @@ describe('automation routes', () => {
     expect(dashboardResponse.body.data.agentRuns).toHaveLength(1);
     expect(dashboardResponse.body.data.agentRuns[0].status).toBe('COMPLETED');
   });
+
+  it('returns a descriptive 409 when the frontend attempts to persist AUTOMATIC mode', async () => {
+    const app = buildApp();
+
+    const response = await request(app).put('/api/v1/automation/settings').send({
+      enabled: true,
+      mode: 'AUTOMATIC',
+      timezone: 'America/Argentina/Buenos_Aires',
+      dailyApplicationLimit: 3,
+      dailyDiscoveryLimit: 10,
+      minimumMatchScore: 60,
+      requireHumanApproval: true,
+      startTime: '08:30',
+      daysOfWeek: [1, 2, 3, 4, 5],
+      filters: {
+        allowedSources: ['MANUAL'],
+        allowedRoles: ['backend'],
+        allowedSeniorities: ['junior', 'unknown'],
+        allowedWorkModes: ['remote', 'hybrid'],
+        blockedCompanies: [],
+        blockedKeywords: [],
+      },
+      sourcePolicies: {
+        MANUAL: 'AUTO_PREPARE',
+        LINKEDIN_JOBS_SUPERVISED: 'AUTO_PREPARE',
+        LINKEDIN_FEED_SUPERVISED: 'AUTO_PREPARE',
+        LINKEDIN_POST_SEARCH_SUPERVISED: 'AUTO_PREPARE',
+      },
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.success).toBe(false);
+    expect(response.body.code).toBe('AUTOMATION_MODE_UNAVAILABLE');
+    expect(response.body.title).toBe('Modo de automatizacion no disponible');
+    expect(response.body.action).toMatch(/manual, asistido o simulacion segura/i);
+    expect(response.body.details.supportedModes).toEqual(['MANUAL', 'ASSISTED', 'DRY_RUN']);
+  });
 });

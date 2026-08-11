@@ -25,7 +25,7 @@ describe('automationSchedulerService', () => {
     expect(runScheduledCycle).toHaveBeenCalledTimes(1);
     expect(runScheduledCycle).toHaveBeenCalledWith({
       trigger: 'SCHEDULED',
-      reason: 'Scheduled DRY_RUN cycle',
+      reason: 'Ciclo programado de simulacion segura',
     });
     expect(result).toEqual({ id: 'run-1', status: 'COMPLETED' });
   });
@@ -50,6 +50,52 @@ describe('automationSchedulerService', () => {
 
     const result = await scheduler.evaluate();
 
+    expect(runScheduledCycle).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  it('reports whether the scheduler is running', () => {
+    const scheduler = createAutomationSchedulerService(
+      { getSettings: vi.fn() },
+      { runScheduledCycle: vi.fn() },
+      { intervalMs: 15_000 },
+    );
+
+    expect(scheduler.getStatus()).toEqual({ running: false, intervalMs: 15_000, killSwitchEnabled: false });
+
+    scheduler.start();
+
+    expect(scheduler.getStatus()).toEqual({ running: true, intervalMs: 15_000, killSwitchEnabled: false });
+
+    scheduler.stop();
+
+    expect(scheduler.getStatus()).toEqual({ running: false, intervalMs: 15_000, killSwitchEnabled: false });
+  });
+
+  it('does not start or evaluate when the kill switch is enabled', async () => {
+    const runScheduledCycle = vi.fn(async () => ({ id: 'run-1', status: 'COMPLETED' }));
+    const scheduler = createAutomationSchedulerService(
+      {
+        getSettings: vi.fn(async () => ({
+          enabled: true,
+          mode: 'DRY_RUN',
+          timezone: 'America/Argentina/Buenos_Aires',
+          startTime: '09:00',
+          daysOfWeek: [5],
+          lastTriggeredAt: null,
+        })),
+      },
+      { runScheduledCycle },
+      {
+        intervalMs: 15_000,
+        killSwitchEnabled: true,
+      },
+    );
+
+    scheduler.start();
+    const result = await scheduler.evaluate();
+
+    expect(scheduler.getStatus()).toEqual({ running: false, intervalMs: 15_000, killSwitchEnabled: true });
     expect(runScheduledCycle).not.toHaveBeenCalled();
     expect(result).toBeNull();
   });

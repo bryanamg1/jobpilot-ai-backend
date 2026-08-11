@@ -8,7 +8,8 @@ import { getMysqlPool } from '../../src/repositories/mysql/mysqlClient.js';
 const runMysqlTests =
   process.env.JOBPILOT_RUN_MYSQL_TESTS === 'true' &&
   env.mysqlConfigured &&
-  process.env.JOBPILOT_MYSQL_TEST_ACK === 'true';
+  process.env.JOBPILOT_MYSQL_TEST_ACK === 'true' &&
+  /\b(test|ci)\b/i.test(env.MYSQL_DATABASE ?? '');
 
 const describeMysql = runMysqlTests ? describe : describe.skip;
 
