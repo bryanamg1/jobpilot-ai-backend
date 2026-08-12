@@ -6,6 +6,12 @@ function createRepositoryMock(finalJob) {
   let reads = 0;
 
   return {
+    listDesktopAgents: vi.fn(async () => [
+      {
+        id: 'agent-1',
+        status: 'ONLINE',
+      },
+    ]),
     saveBrowserJob: vi.fn(async (job) => {
       jobs.push(structuredClone(job));
       return job;
@@ -83,5 +89,57 @@ describe('desktopAgentBrowserRuntime', () => {
         sessionId: 'session-2',
       }),
     ).rejects.toThrow('Worker failed');
+  });
+
+  it('falla rapido cuando no hay desktop agent activo conectado al backend', async () => {
+    const repository = {
+      listDesktopAgents: vi.fn(async () => []),
+      saveBrowserJob: vi.fn(async () => {
+        throw new Error('saveBrowserJob no deberia ejecutarse');
+      }),
+      getBrowserJobById: vi.fn(async () => null),
+    };
+    const runtime = createDesktopAgentBrowserRuntime(repository, {
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    });
+
+    await expect(
+      runtime.getSnapshot({
+        sessionId: 'session-3',
+      }),
+    ).rejects.toMatchObject({
+      code: 'DESKTOP_AGENT_UNAVAILABLE',
+    });
+    expect(repository.saveBrowserJob).not.toHaveBeenCalled();
+  });
+
+  it('falla cuando el job no es reclamado dentro del claim timeout', async () => {
+    const repository = {
+      listDesktopAgents: vi.fn(async () => [
+        {
+          id: 'agent-1',
+          status: 'ONLINE',
+        },
+      ]),
+      saveBrowserJob: vi.fn(async () => ({})),
+      getBrowserJobById: vi.fn(async () => ({
+        id: 'job-1',
+        status: 'PENDING',
+      })),
+    };
+    const runtime = createDesktopAgentBrowserRuntime(repository, {
+      pollIntervalMs: 0,
+      claimTimeoutMs: 1,
+      timeoutMs: 50,
+    });
+
+    await expect(
+      runtime.getSnapshot({
+        sessionId: 'session-4',
+      }),
+    ).rejects.toMatchObject({
+      code: 'DESKTOP_AGENT_JOB_NOT_CLAIMED',
+    });
   });
 });

@@ -48,6 +48,11 @@ const PROVIDER_CONFIG = {
 
 export function createBrowserSessionService(repository, auditService, jobOfferService, options = {}) {
   const config = options.config ?? env;
+  const runtimeRetryOptions =
+    options.runtimeRetryOptions ??
+    (config.BROWSER_RUNTIME === 'desktop_agent'
+      ? { attempts: 1, baseDelayMs: 0 }
+      : { attempts: 2, baseDelayMs: 100 });
   const runtime =
     options.runtime ??
     (config.BROWSER_RUNTIME === 'desktop_agent'
@@ -121,12 +126,12 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
           () =>
             retryOperation(
               () =>
-                runtime.startSession({
+        runtime.startSession({
                   sessionId,
                   provider: input.provider,
                   startUrl,
                 }),
-              { attempts: 2, baseDelayMs: 100 },
+              runtimeRetryOptions,
             ),
         );
       } catch (error) {
@@ -171,11 +176,44 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
     },
 
     async refreshSession(sessionId) {
+      const startedAt = Date.now();
       const { record, handle } = await getManagedSession(repository, activeSessions, sessionId);
-      const snapshot = await executeRuntimeCall(
-        breaker,
-        () => retryOperation(() => runtime.getSnapshot(handle), { attempts: 2, baseDelayMs: 100 }),
-      );
+      logBrowserSessionEvent('refresh.start', {
+        sessionId,
+        runtimeKind: record.metadata?.runtimeKind ?? 'local',
+        status: record.status,
+      });
+
+      let snapshot;
+      try {
+        snapshot = await executeRuntimeCall(
+          breaker,
+          () => retryOperation(() => runtime.getSnapshot(handle), runtimeRetryOptions),
+        );
+      } catch (error) {
+        logBrowserSessionEvent('refresh.failed', {
+          sessionId,
+          runtimeKind: record.metadata?.runtimeKind ?? 'local',
+          status: record.status,
+          durationMs: Date.now() - startedAt,
+          errorCode: error?.code ?? 'UNKNOWN',
+          errorMessage: error?.message ?? 'Error desconocido',
+        });
+
+        if (config.BROWSER_RUNTIME === 'desktop_agent') {
+          const refreshError = describeDesktopAgentRefreshError(error);
+          throw new HttpError(503, refreshError.message, {
+            code: refreshError.errorCode,
+            cause: refreshError.reason,
+            action: refreshError.suggestion,
+            sessionId,
+            runtimeKind: record.metadata?.runtimeKind ?? 'desktop_agent',
+            jobId: error?.details?.jobId ?? null,
+          });
+        }
+
+        throw error;
+      }
       const updated = updateSessionFromSnapshot(record, snapshot, {
         navigationCount: record.metadata?.navigationCount ?? 0,
         lastAction: 'REFRESHED',
@@ -187,6 +225,13 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
         currentUrl: updated.metadata.currentUrl,
       });
 
+      logBrowserSessionEvent('refresh.completed', {
+        sessionId,
+        runtimeKind: updated.metadata?.runtimeKind ?? 'local',
+        status: updated.status,
+        durationMs: Date.now() - startedAt,
+      });
+
       return updated;
     },
 
@@ -195,7 +240,7 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
       const targetUrl = normalizeLinkedInUrl(input.url);
       const snapshot = await executeRuntimeCall(
         breaker,
-        () => retryOperation(() => runtime.navigate(handle, targetUrl), { attempts: 2, baseDelayMs: 100 }),
+        () => retryOperation(() => runtime.navigate(handle, targetUrl), runtimeRetryOptions),
       );
       const updated = updateSessionFromSnapshot(record, snapshot, {
         navigationCount: (record.metadata?.navigationCount ?? 0) + 1,
@@ -215,7 +260,7 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
       const { record, handle } = await getManagedSession(repository, activeSessions, sessionId);
       const snapshot = await executeRuntimeCall(
         breaker,
-        () => retryOperation(() => runtime.getSnapshot(handle), { attempts: 2, baseDelayMs: 100 }),
+        () => retryOperation(() => runtime.getSnapshot(handle), runtimeRetryOptions),
       );
       const providerConfig = PROVIDER_CONFIG[record.provider];
 
@@ -287,7 +332,7 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
       if (handle) {
         await executeRuntimeCall(
           breaker,
-          () => retryOperation(() => runtime.close(handle), { attempts: 2, baseDelayMs: 100 }),
+          () => retryOperation(() => runtime.close(handle), runtimeRetryOptions),
         );
         activeSessions.delete(sessionId);
       }
@@ -555,4 +600,54 @@ function describeBrowserRemoteControlError(error) {
     reason: rawMessage || 'Fallo generico al consultar el visor remoto de Browserless.',
     suggestion: 'Revisa la configuracion de Browserless y vuelve a intentar con la sesion aun activa.',
   };
+}
+
+function describeDesktopAgentRefreshError(error) {
+  const rawMessage = String(error?.message ?? '').trim();
+
+  if (error?.code === 'DESKTOP_AGENT_UNAVAILABLE' || error?.code === 'DESKTOP_AGENT_JOB_NOT_CLAIMED') {
+    return {
+      errorCode: error.code,
+      message: 'No hay un Desktop Agent disponible para verificar la sesion supervisada.',
+      reason: rawMessage || 'Ningun Desktop Agent reclamo el trabajo de verificacion.',
+      suggestion:
+        'Confirma que el Desktop Agent siga ONLINE y que este conectado al mismo backend donde abriste la sesion.',
+    };
+  }
+
+  if (error?.code === 'DESKTOP_AGENT_JOB_TIMEOUT') {
+    return {
+      errorCode: error.code,
+      message: 'El Desktop Agent no termino la verificacion de la sesion dentro del tiempo esperado.',
+      reason: rawMessage || 'La captura del estado visible del navegador excedio el timeout.',
+      suggestion:
+        'Revisa la consola del Desktop Agent, espera a que LinkedIn termine de cargar y vuelve a intentar.',
+    };
+  }
+
+  if (error?.code === 'DESKTOP_AGENT_JOB_FAILED') {
+    return {
+      errorCode: error.code,
+      message: 'El Desktop Agent devolvio un error al verificar la sesion supervisada.',
+      reason: rawMessage || 'El worker reporto un fallo durante GET_SNAPSHOT.',
+      suggestion: 'Revisa la consola del Desktop Agent y corrige el error reportado antes de reintentar.',
+    };
+  }
+
+  return {
+    errorCode: 'DESKTOP_AGENT_REFRESH_FAILED',
+    message: 'No se pudo verificar la sesion supervisada con el Desktop Agent.',
+    reason: rawMessage || 'Fallo generico al refrescar la sesion supervisada.',
+    suggestion: 'Vuelve a intentar y revisa los logs del backend y del Desktop Agent si el problema persiste.',
+  };
+}
+
+function logBrowserSessionEvent(stage, payload) {
+  console.info(
+    `[browser-session-service] ${JSON.stringify({
+      stage,
+      timestamp: new Date().toISOString(),
+      ...payload,
+    })}`,
+  );
 }

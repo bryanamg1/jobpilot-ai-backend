@@ -475,4 +475,58 @@ describe('browserSessionService', () => {
     await service.closeSession(session.id);
     expect(runtime.close).toHaveBeenCalledWith(expect.objectContaining({ id: 'runtime-handle-browserless-close-1' }));
   });
+
+  it('no reintenta refresh en desktop agent cuando el primer GET_SNAPSHOT falla y devuelve 503 claro', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => ({
+        handle: { sessionId: 'runtime-handle-desktop-1' },
+        snapshot: {
+          title: 'LinkedIn Jobs',
+          url: 'https://www.linkedin.com/jobs/',
+          visibleText: 'LinkedIn Jobs Home',
+          capturedAt: '2026-08-05T20:00:00.000Z',
+          runtimeKind: 'desktop_agent',
+          isLinkedIn: true,
+          isJobsSection: true,
+          isJobView: false,
+          requiresAttention: true,
+          attentionReasons: ['LOGIN_REQUIRED'],
+        },
+      })),
+      getSnapshot: vi.fn(async () => {
+        const error = new Error(
+          'Ningun Desktop Agent activo reclamo la sesion supervisada a tiempo. Verifica que el agente este conectado a este backend.',
+        );
+        error.code = 'DESKTOP_AGENT_JOB_NOT_CLAIMED';
+        error.details = { jobId: 'job-timeout-1' };
+        throw error;
+      }),
+      navigate: vi.fn(),
+      close: vi.fn(),
+    };
+    const service = createBrowserSessionService(
+      repository,
+      auditService,
+      {},
+      {
+        runtime,
+        config: {
+          BROWSER_RUNTIME: 'desktop_agent',
+          DESKTOP_AGENT_POLL_INTERVAL_MS: 0,
+        },
+      },
+    );
+    const session = await service.startSession({ provider: 'LINKEDIN_JOBS' });
+
+    await expect(service.refreshSession(session.id)).rejects.toMatchObject({
+      statusCode: 503,
+      message: 'No hay un Desktop Agent disponible para verificar la sesion supervisada.',
+      details: expect.objectContaining({
+        code: 'DESKTOP_AGENT_JOB_NOT_CLAIMED',
+      }),
+    });
+    expect(runtime.getSnapshot).toHaveBeenCalledTimes(1);
+  });
 });

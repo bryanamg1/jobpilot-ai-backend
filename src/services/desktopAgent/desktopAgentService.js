@@ -35,6 +35,10 @@ export function createDesktopAgentService(repository, auditService, options = {}
           createdAt: existing.createdAt,
         };
         await repository.updateDesktopAgent(updated);
+        logDesktopAgentEvent('register.updated', {
+          agentId: updated.id,
+          status: updated.status,
+        });
         await auditService.record('desktop_agent.registered', 'desktop_agent', updated.id, {
           status: updated.status,
           version: updated.version,
@@ -44,6 +48,10 @@ export function createDesktopAgentService(repository, auditService, options = {}
       }
 
       await repository.saveDesktopAgent(record);
+      logDesktopAgentEvent('register.created', {
+        agentId: record.id,
+        status: record.status,
+      });
       await auditService.record('desktop_agent.registered', 'desktop_agent', record.id, {
         status: record.status,
         version: record.version,
@@ -64,6 +72,11 @@ export function createDesktopAgentService(repository, auditService, options = {}
       };
 
       await repository.updateDesktopAgent(updated);
+      logDesktopAgentEvent('heartbeat.received', {
+        agentId: updated.id,
+        status: updated.status,
+        activeJobId: input.activeJobId ?? null,
+      });
 
       if (input.activeJobId) {
         const job = await repository.getBrowserJobById?.(input.activeJobId);
@@ -73,6 +86,12 @@ export function createDesktopAgentService(repository, auditService, options = {}
             status: 'RUNNING',
             agentId: updated.id,
             updatedAt: now,
+          });
+          logDesktopAgentEvent('job.running', {
+            agentId: updated.id,
+            jobId: job.id,
+            sessionId: job.sessionId,
+            status: 'RUNNING',
           });
         }
       }
@@ -99,6 +118,18 @@ export function createDesktopAgentService(repository, auditService, options = {}
           status: DESKTOP_AGENT_STATUS.ONLINE,
           updatedAt: new Date().toISOString(),
         });
+        logDesktopAgentEvent('job.none', {
+          agentId,
+          status: 'ONLINE',
+        });
+      } else {
+        logDesktopAgentEvent('job.claimed', {
+          agentId,
+          jobId: job.id,
+          sessionId: job.sessionId,
+          jobType: job.jobType,
+          status: job.status,
+        });
       }
 
       return job;
@@ -115,6 +146,13 @@ export function createDesktopAgentService(repository, auditService, options = {}
         error: null,
         completedAt: now,
         updatedAt: now,
+      });
+      logDesktopAgentEvent('job.completed', {
+        agentId: input.agentId ?? job.agentId ?? null,
+        jobId,
+        sessionId: job.sessionId,
+        jobType: job.jobType,
+        status: 'COMPLETED',
       });
 
       if (input.agentId) {
@@ -139,6 +177,14 @@ export function createDesktopAgentService(repository, auditService, options = {}
         error: input.error,
         completedAt: now,
         updatedAt: now,
+      });
+      logDesktopAgentEvent('job.failed', {
+        agentId: input.agentId ?? job.agentId ?? null,
+        jobId,
+        sessionId: job.sessionId,
+        jobType: job.jobType,
+        status: 'FAILED',
+        errorMessage: input.error?.message ?? null,
       });
 
       if (input.agentId) {
@@ -192,4 +238,14 @@ async function setAgentStatus(repository, agentId, status) {
     status,
     updatedAt: new Date().toISOString(),
   });
+}
+
+function logDesktopAgentEvent(stage, payload) {
+  console.info(
+    `[desktop-agent-service] ${JSON.stringify({
+      stage,
+      timestamp: new Date().toISOString(),
+      ...payload,
+    })}`,
+  );
 }
