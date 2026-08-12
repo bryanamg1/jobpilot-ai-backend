@@ -83,6 +83,7 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
               () =>
                 runtime.startSession({
                   sessionId,
+                  provider: input.provider,
                   startUrl,
                 }),
               { attempts: 2, baseDelayMs: 100 },
@@ -112,6 +113,7 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
           navigationCount: 1,
           lastAction: 'SESSION_STARTED',
           runtimeAvailable: true,
+          reusedStoredSession: Boolean(runtimeResult.reusedStoredSession),
           providerMode: input.provider,
           lastCapturedJobId: null,
           lastCapturedAt: null,

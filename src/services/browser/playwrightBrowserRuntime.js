@@ -1,4 +1,6 @@
 import { chromium } from 'playwright';
+import { access, mkdir } from 'node:fs/promises';
+import path from 'node:path';
 import { env } from '../../config/env.js';
 
 const MAX_CAPTURE_CHARS = 20_000;
@@ -19,39 +21,55 @@ export function createPlaywrightBrowserRuntime(options = {}) {
   const launcher = options.launcher ?? chromium;
   const config = options.config ?? env;
   const launchOptions = options.launchOptions ?? {};
+  const accessFn = options.accessFn ?? access;
+  const mkdirFn = options.mkdirFn ?? mkdir;
 
   return {
-    async startSession({ startUrl }) {
+    async startSession({ provider, startUrl }) {
+      const stateFilePath = resolveStateFilePath(
+        config.BROWSER_SESSION_STATE_DIR ?? env.BROWSER_SESSION_STATE_DIR,
+        provider,
+      );
+      const existingStatePath = await resolveExistingStatePath(stateFilePath, accessFn);
       const browser = await launcher.launch({
         ...launchOptions,
         headless: config.PLAYWRIGHT_HEADLESS,
       });
       const context = await browser.newContext({
         ignoreHTTPSErrors: true,
+        ...(existingStatePath ? { storageState: existingStatePath } : {}),
       });
       const page = await context.newPage();
       await page.goto(startUrl, { waitUntil: 'domcontentloaded' });
 
+      const handle = {
+        browser,
+        context,
+        page,
+        stateFilePath,
+      };
+      await persistStorageState(handle, mkdirFn);
+
       return {
-        handle: {
-          browser,
-          context,
-          page,
-        },
+        handle,
         snapshot: await readSnapshot(page),
+        reusedStoredSession: Boolean(existingStatePath),
       };
     },
 
     async navigate(handle, url) {
       await handle.page.goto(url, { waitUntil: 'domcontentloaded' });
+      await persistStorageState(handle, mkdirFn);
       return readSnapshot(handle.page);
     },
 
     async getSnapshot(handle) {
+      await persistStorageState(handle, mkdirFn);
       return readSnapshot(handle.page);
     },
 
     async close(handle) {
+      await persistStorageState(handle, mkdirFn);
       await handle.context.close();
       await handle.browser.close();
     },
@@ -128,4 +146,36 @@ function inspectLinkedInPage({ title, url, visibleText }) {
     requiresAttention: attentionReasons.length > 0,
     attentionReasons,
   };
+}
+
+function resolveStateFilePath(baseDir, provider) {
+  const safeProvider = String(provider || 'default')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/gu, '-');
+
+  return path.resolve(process.cwd(), baseDir, `${safeProvider}.json`);
+}
+
+async function resolveExistingStatePath(stateFilePath, accessFn) {
+  try {
+    await accessFn(stateFilePath);
+    return stateFilePath;
+  } catch {
+    return null;
+  }
+}
+
+async function persistStorageState(handle, mkdirFn) {
+  try {
+    const targetPath = handle?.stateFilePath;
+    if (!targetPath || typeof handle?.context?.storageState !== 'function') {
+      return;
+    }
+
+    await mkdirFn(path.dirname(targetPath), { recursive: true });
+    await handle.context.storageState({ path: targetPath });
+  } catch {
+    // Best effort: supervised browsing should still work even if state persistence fails.
+  }
 }

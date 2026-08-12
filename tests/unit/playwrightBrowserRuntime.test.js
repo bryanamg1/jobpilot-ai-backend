@@ -11,6 +11,7 @@ function createLauncherMock() {
   };
   const context = {
     newPage: vi.fn(async () => page),
+    storageState: vi.fn(async () => ({})),
     close: vi.fn(async () => ({})),
   };
   const browser = {
@@ -35,6 +36,10 @@ describe('playwrightBrowserRuntime', () => {
     const runtime = createPlaywrightBrowserRuntime({
       launcher,
       config: { PLAYWRIGHT_HEADLESS: true },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
     });
 
     await runtime.startSession({ startUrl: 'https://www.linkedin.com/jobs/' });
@@ -51,6 +56,10 @@ describe('playwrightBrowserRuntime', () => {
     const runtime = createPlaywrightBrowserRuntime({
       launcher,
       config: { PLAYWRIGHT_HEADLESS: false },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
     });
 
     await runtime.startSession({ startUrl: 'https://www.linkedin.com/jobs/' });
@@ -83,6 +92,10 @@ describe('playwrightBrowserRuntime', () => {
       launchOptions: {
         args: ['--no-sandbox'],
       },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
     });
 
     await runtime.startSession({ startUrl: 'https://www.linkedin.com/jobs/' });
@@ -104,10 +117,70 @@ describe('playwrightBrowserRuntime', () => {
     const runtime = createPlaywrightBrowserRuntime({
       launcher,
       config: { PLAYWRIGHT_HEADLESS: true },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
     });
 
     await expect(runtime.startSession({ startUrl: 'https://www.linkedin.com/jobs/' })).rejects.toThrow(
       'launch failed',
+    );
+  });
+
+  it('reutiliza storageState guardado cuando existe una sesion previa', async () => {
+    const { launcher, browser } = createLauncherMock();
+    const accessFn = vi.fn(async () => ({}));
+    const mkdirFn = vi.fn(async () => ({}));
+    const runtime = createPlaywrightBrowserRuntime({
+      launcher,
+      config: {
+        PLAYWRIGHT_HEADLESS: true,
+        BROWSER_SESSION_STATE_DIR: 'storage/browser-sessions',
+      },
+      accessFn,
+      mkdirFn,
+    });
+
+    const result = await runtime.startSession({
+      provider: 'LINKEDIN_JOBS',
+      startUrl: 'https://www.linkedin.com/jobs/',
+    });
+
+    expect(browser.newContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ignoreHTTPSErrors: true,
+        storageState: expect.stringContaining('linkedin_jobs.json'),
+      }),
+    );
+    expect(result.reusedStoredSession).toBe(true);
+  });
+
+  it('guarda storageState al iniciar una sesion supervisada', async () => {
+    const { launcher, context } = createLauncherMock();
+    const accessFn = vi.fn(async () => {
+      throw new Error('missing');
+    });
+    const mkdirFn = vi.fn(async () => ({}));
+    const runtime = createPlaywrightBrowserRuntime({
+      launcher,
+      config: {
+        PLAYWRIGHT_HEADLESS: true,
+        BROWSER_SESSION_STATE_DIR: 'storage/browser-sessions',
+      },
+      accessFn,
+      mkdirFn,
+    });
+
+    await runtime.startSession({
+      provider: 'LINKEDIN_FEED',
+      startUrl: 'https://www.linkedin.com/feed/',
+    });
+
+    expect(context.storageState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: expect.stringContaining('linkedin_feed.json'),
+      }),
     );
   });
 });
