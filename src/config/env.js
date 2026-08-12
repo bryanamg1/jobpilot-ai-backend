@@ -37,6 +37,10 @@ const envSchema = z.object({
     .string()
     .default('("linkedin" OR "job alert" OR "hiring" OR "vacante" OR "oportunidad laboral") newer_than:30d'),
   GOOGLE_GMAIL_MAX_RESULTS: z.coerce.number().default(10),
+  BROWSER_RUNTIME: z.enum(['local', 'browserless']).default('local'),
+  BROWSERLESS_WS_URL: z.string().optional(),
+  BROWSERLESS_TOKEN: z.string().optional(),
+  BROWSERLESS_PROFILE_NAME: z.string().optional(),
   PLAYWRIGHT_HEADLESS: z.enum(['true', 'false']).optional(),
   BROWSER_SESSION_STATE_DIR: z.string().default('storage/browser-sessions'),
   RESUME_STORAGE_DIR: z.string().default('storage/resumes'),

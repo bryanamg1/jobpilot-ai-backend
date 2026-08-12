@@ -4,14 +4,19 @@ import path from 'node:path';
 import { env } from '../../config/env.js';
 
 const MAX_CAPTURE_CHARS = 20_000;
+const BROWSER_RUNTIME = {
+  LOCAL: 'local',
+  BROWSERLESS: 'browserless',
+};
+const BROWSERLESS_NATIVE_PLAYWRIGHT_SUFFIX = '/playwright';
 const HIRING_SIGNAL_PATTERNS = [
   { token: 'hiring', pattern: /\bhiring\b/u },
   { token: 'send_your_resume', pattern: /send (your )?(resume|cv)/u },
   { token: 'enviar_cv', pattern: /enviar (cv|resume|curriculum)/u },
   { token: 'oportunidad_laboral', pattern: /oportunidad laboral/u },
   { token: 'estamos_buscando', pattern: /estamos buscando/u },
-  { token: 'busqueda_activa', pattern: /b[uú]squeda activa/u },
-  { token: 'escribeme_por_privado', pattern: /escr[ií]beme por privado/u },
+  { token: 'busqueda_activa', pattern: /b[uÃº]squeda activa/u },
+  { token: 'escribeme_por_privado', pattern: /escr[iÃ­]beme por privado/u },
   { token: 'apply_here', pattern: /apply here/u },
   { token: 'dm_me', pattern: /\b(dm|direct message|message me)\b/u },
 ];
@@ -24,6 +29,25 @@ export function createPlaywrightBrowserRuntime(options = {}) {
   const accessFn = options.accessFn ?? access;
   const mkdirFn = options.mkdirFn ?? mkdir;
 
+  if (config.BROWSER_RUNTIME === BROWSER_RUNTIME.BROWSERLESS) {
+    return createBrowserlessRuntime({
+      launcher,
+      config,
+      accessFn,
+      mkdirFn,
+    });
+  }
+
+  return createLocalRuntime({
+    launcher,
+    config,
+    launchOptions,
+    accessFn,
+    mkdirFn,
+  });
+}
+
+function createLocalRuntime({ launcher, config, launchOptions, accessFn, mkdirFn }) {
   return {
     async startSession({ provider, startUrl }) {
       const stateFilePath = resolveStateFilePath(
@@ -47,12 +71,13 @@ export function createPlaywrightBrowserRuntime(options = {}) {
         context,
         page,
         stateFilePath,
+        runtimeKind: BROWSER_RUNTIME.LOCAL,
       };
       await persistStorageState(handle, mkdirFn);
 
       return {
         handle,
-        snapshot: await readSnapshot(page),
+        snapshot: await buildSnapshot(handle, page),
         reusedStoredSession: Boolean(existingStatePath),
       };
     },
@@ -60,12 +85,12 @@ export function createPlaywrightBrowserRuntime(options = {}) {
     async navigate(handle, url) {
       await handle.page.goto(url, { waitUntil: 'domcontentloaded' });
       await persistStorageState(handle, mkdirFn);
-      return readSnapshot(handle.page);
+      return buildSnapshot(handle, handle.page);
     },
 
     async getSnapshot(handle) {
       await persistStorageState(handle, mkdirFn);
-      return readSnapshot(handle.page);
+      return buildSnapshot(handle, handle.page);
     },
 
     async close(handle) {
@@ -76,7 +101,61 @@ export function createPlaywrightBrowserRuntime(options = {}) {
   };
 }
 
-async function readSnapshot(page) {
+function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn }) {
+  return {
+    async startSession({ sessionId, provider, startUrl }) {
+      const stateFilePath = resolveStateFilePath(
+        config.BROWSER_SESSION_STATE_DIR ?? env.BROWSER_SESSION_STATE_DIR,
+        provider,
+      );
+      const existingStatePath = await resolveExistingStatePath(stateFilePath, accessFn);
+      const browserlessUrl = buildBrowserlessWebSocketUrl(config, sessionId);
+      const connectionMode = resolveBrowserlessConnectionMode(browserlessUrl);
+      const browser =
+        connectionMode === 'playwright-native'
+          ? await launcher.connect(browserlessUrl.toString())
+          : await launcher.connectOverCDP(browserlessUrl.toString());
+      const context = await resolveBrowserlessContext(browser, existingStatePath);
+      const page = await resolveBrowserlessPage(context);
+
+      await page.goto(startUrl, { waitUntil: 'domcontentloaded' });
+
+      const handle = {
+        browser,
+        context,
+        page,
+        stateFilePath,
+        runtimeKind: BROWSER_RUNTIME.BROWSERLESS,
+        browserlessConnectionMode: connectionMode,
+      };
+      await persistStorageState(handle, mkdirFn);
+
+      return {
+        handle,
+        snapshot: await buildSnapshot(handle, page),
+        reusedStoredSession: Boolean(existingStatePath || config.BROWSERLESS_PROFILE_NAME),
+      };
+    },
+
+    async navigate(handle, url) {
+      await handle.page.goto(url, { waitUntil: 'domcontentloaded' });
+      await persistStorageState(handle, mkdirFn);
+      return buildSnapshot(handle, handle.page);
+    },
+
+    async getSnapshot(handle) {
+      await persistStorageState(handle, mkdirFn);
+      return buildSnapshot(handle, handle.page);
+    },
+
+    async close(handle) {
+      await persistStorageState(handle, mkdirFn);
+      await handle.browser.close();
+    },
+  };
+}
+
+async function buildSnapshot(handle, page) {
   const [title, url, visibleText] = await Promise.all([
     page.title(),
     Promise.resolve(page.url()),
@@ -101,6 +180,8 @@ async function readSnapshot(page) {
     url,
     visibleText,
     capturedAt: new Date().toISOString(),
+    runtimeKind: handle.runtimeKind,
+    browserlessConnectionMode: handle.browserlessConnectionMode ?? null,
     ...snapshot,
   };
 }
@@ -178,4 +259,93 @@ async function persistStorageState(handle, mkdirFn) {
   } catch {
     // Best effort: supervised browsing should still work even if state persistence fails.
   }
+}
+
+function buildBrowserlessWebSocketUrl(config, sessionId) {
+  const rawUrl = String(config.BROWSERLESS_WS_URL ?? '').trim();
+  if (!rawUrl) {
+    throw buildBrowserlessConfigError(
+      'BROWSERLESS_WS_URL no esta configurado para el runtime remoto.',
+      'Completa BROWSERLESS_WS_URL o vuelve a BROWSER_RUNTIME=local.',
+    );
+  }
+
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw buildBrowserlessConfigError(
+      'BROWSERLESS_WS_URL no tiene un formato valido.',
+      'Usa un endpoint WebSocket valido de Browserless.',
+    );
+  }
+
+  if (!['ws:', 'wss:'].includes(url.protocol)) {
+    throw buildBrowserlessConfigError(
+      'BROWSERLESS_WS_URL debe usar ws:// o wss://.',
+      'Corrige el protocolo del endpoint remoto de Browserless.',
+    );
+  }
+
+  if (!url.searchParams.get('token')) {
+    const token = String(config.BROWSERLESS_TOKEN ?? '').trim();
+    if (!token) {
+      throw buildBrowserlessConfigError(
+        'Browserless requiere un token y no se encontro en la configuracion.',
+        'Completa BROWSERLESS_TOKEN o usa un endpoint que ya incluya ?token=.',
+      );
+    }
+
+    url.searchParams.set('token', token);
+  }
+
+  if (!url.searchParams.get('id')) {
+    url.searchParams.set('id', sessionId);
+  }
+
+  if (config.BROWSERLESS_PROFILE_NAME && !url.searchParams.get('profile')) {
+    url.searchParams.set('profile', config.BROWSERLESS_PROFILE_NAME);
+  }
+
+  return url;
+}
+
+function resolveBrowserlessConnectionMode(browserlessUrl) {
+  return browserlessUrl.pathname.toLowerCase().endsWith(BROWSERLESS_NATIVE_PLAYWRIGHT_SUFFIX)
+    ? 'playwright-native'
+    : 'cdp';
+}
+
+async function resolveBrowserlessContext(browser, existingStatePath) {
+  const defaultContext = browser.contexts?.()[0];
+  if (defaultContext) {
+    return defaultContext;
+  }
+
+  if (existingStatePath) {
+    return browser.newContext({
+      ignoreHTTPSErrors: true,
+      storageState: existingStatePath,
+    });
+  }
+
+  return browser.newContext({
+    ignoreHTTPSErrors: true,
+  });
+}
+
+async function resolveBrowserlessPage(context) {
+  const existingPage = context.pages?.()[0];
+  if (existingPage) {
+    return existingPage;
+  }
+
+  return context.newPage();
+}
+
+function buildBrowserlessConfigError(message, suggestion) {
+  const error = new Error(message);
+  error.code = 'BROWSERLESS_CONFIG_ERROR';
+  error.suggestion = suggestion;
+  return error;
 }

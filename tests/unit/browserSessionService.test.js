@@ -351,4 +351,27 @@ describe('browserSessionService', () => {
       }),
     });
   });
+
+  it('clasifica el error cuando Browserless no esta configurado correctamente', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => {
+        const error = new Error('BROWSERLESS_WS_URL no esta configurado para el runtime remoto.');
+        error.code = 'BROWSERLESS_CONFIG_ERROR';
+        error.suggestion = 'Completa BROWSERLESS_WS_URL o vuelve a BROWSER_RUNTIME=local.';
+        throw error;
+      }),
+    };
+    const service = createBrowserSessionService(repository, auditService, {}, { runtime });
+
+    await expect(service.startSession({ provider: 'LINKEDIN_JOBS' })).rejects.toMatchObject({
+      statusCode: 503,
+      message:
+        'No se pudo iniciar la sesion supervisada remota porque Browserless no esta configurado correctamente.',
+      details: expect.objectContaining({
+        errorCode: 'BROWSERLESS_CONFIG_ERROR',
+      }),
+    });
+  });
 });

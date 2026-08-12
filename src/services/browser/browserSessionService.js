@@ -323,6 +323,9 @@ function buildSessionMetadata(snapshot, baseMetadata = {}) {
     ...baseMetadata,
     currentUrl: snapshot.url,
     pageTitle: snapshot.title,
+    runtimeKind: snapshot.runtimeKind ?? baseMetadata.runtimeKind ?? 'local',
+    browserlessConnectionMode:
+      snapshot.browserlessConnectionMode ?? baseMetadata.browserlessConnectionMode ?? null,
     lastSeenAt: snapshot.capturedAt,
     visibleTextLength: snapshot.visibleText.length,
     visibleTextExcerpt: snapshot.visibleText.slice(0, 500),
@@ -399,8 +402,48 @@ function mapProviderToSourceType(provider) {
 }
 
 function describeBrowserLaunchError(error) {
+  if (error?.code === 'BROWSERLESS_CONFIG_ERROR') {
+    return {
+      errorCode: 'BROWSERLESS_CONFIG_ERROR',
+      message: 'No se pudo iniciar la sesion supervisada remota porque Browserless no esta configurado correctamente.',
+      reason: String(error?.message ?? 'Configuracion incompleta de Browserless.'),
+      suggestion:
+        error?.suggestion ??
+        'Revisa BROWSER_RUNTIME, BROWSERLESS_WS_URL y BROWSERLESS_TOKEN antes de volver a intentar.',
+    };
+  }
+
   const rawMessage = String(error?.message ?? '').trim();
   const normalizedMessage = rawMessage.toLowerCase();
+
+  if (
+    normalizedMessage.includes('403') ||
+    normalizedMessage.includes('401') ||
+    normalizedMessage.includes('forbidden') ||
+    normalizedMessage.includes('unauthorized')
+  ) {
+    return {
+      errorCode: 'BROWSERLESS_AUTH_FAILED',
+      message: 'No se pudo iniciar la sesion supervisada remota porque Browserless rechazo la autenticacion.',
+      reason: rawMessage || 'Browserless devolvio un error de autenticacion.',
+      suggestion: 'Verifica el token configurado y confirma que el endpoint remoto siga siendo valido.',
+    };
+  }
+
+  if (
+    normalizedMessage.includes('econnrefused') ||
+    normalizedMessage.includes('enotfound') ||
+    normalizedMessage.includes('fetch failed') ||
+    normalizedMessage.includes('websocket') ||
+    normalizedMessage.includes('socket hang up')
+  ) {
+    return {
+      errorCode: 'BROWSERLESS_UNAVAILABLE',
+      message: 'No se pudo conectar con Browserless para abrir la sesion supervisada remota.',
+      reason: rawMessage || 'Browserless no responde o no es alcanzable desde este backend.',
+      suggestion: 'Confirma que Browserless este activo, accesible desde Railway y configurado con la URL publica correcta.',
+    };
+  }
 
   if (
     normalizedMessage.includes("executable doesn't exist") ||

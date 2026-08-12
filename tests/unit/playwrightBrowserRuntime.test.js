@@ -15,11 +15,14 @@ function createLauncherMock() {
     close: vi.fn(async () => ({})),
   };
   const browser = {
+    contexts: vi.fn(() => [context]),
     newContext: vi.fn(async () => context),
     close: vi.fn(async () => ({})),
   };
   const launcher = {
     launch: vi.fn(async () => browser),
+    connectOverCDP: vi.fn(async () => browser),
+    connect: vi.fn(async () => browser),
   };
 
   return {
@@ -113,6 +116,8 @@ describe('playwrightBrowserRuntime', () => {
       launch: vi.fn(async () => {
         throw new Error('launch failed');
       }),
+      connectOverCDP: vi.fn(),
+      connect: vi.fn(),
     };
     const runtime = createPlaywrightBrowserRuntime({
       launcher,
@@ -182,5 +187,128 @@ describe('playwrightBrowserRuntime', () => {
         path: expect.stringContaining('linkedin_feed.json'),
       }),
     );
+  });
+
+  it('usa connectOverCDP cuando Browserless expone un endpoint CDP', async () => {
+    const { launcher, browser } = createLauncherMock();
+    const runtime = createPlaywrightBrowserRuntime({
+      launcher,
+      config: {
+        BROWSER_RUNTIME: 'browserless',
+        BROWSERLESS_WS_URL: 'wss://browserless.example.com',
+        BROWSERLESS_TOKEN: 'secret-token',
+        PLAYWRIGHT_HEADLESS: true,
+        BROWSER_SESSION_STATE_DIR: 'storage/browser-sessions',
+      },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
+    });
+
+    const result = await runtime.startSession({
+      sessionId: 'session-cdp-1',
+      provider: 'LINKEDIN_JOBS',
+      startUrl: 'https://www.linkedin.com/jobs/',
+    });
+
+    expect(launcher.connectOverCDP).toHaveBeenCalledWith(
+      expect.stringContaining('wss://browserless.example.com/?token=secret-token&id=session-cdp-1'),
+    );
+    expect(launcher.connect).not.toHaveBeenCalled();
+    expect(browser.newContext).not.toHaveBeenCalled();
+    expect(result.snapshot.runtimeKind).toBe('browserless');
+    expect(result.snapshot.browserlessConnectionMode).toBe('cdp');
+  });
+
+  it('usa connect cuando el endpoint Browserless es Playwright nativo', async () => {
+    const { launcher } = createLauncherMock();
+    const runtime = createPlaywrightBrowserRuntime({
+      launcher,
+      config: {
+        BROWSER_RUNTIME: 'browserless',
+        BROWSERLESS_WS_URL: 'wss://browserless.example.com/chromium/playwright',
+        BROWSERLESS_TOKEN: 'secret-token',
+        BROWSERLESS_PROFILE_NAME: 'linkedin-jobpilot',
+        PLAYWRIGHT_HEADLESS: true,
+        BROWSER_SESSION_STATE_DIR: 'storage/browser-sessions',
+      },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
+    });
+
+    const result = await runtime.startSession({
+      sessionId: 'session-native-1',
+      provider: 'LINKEDIN_JOBS',
+      startUrl: 'https://www.linkedin.com/jobs/',
+    });
+
+    expect(launcher.connect).toHaveBeenCalledWith(
+      expect.stringContaining('/chromium/playwright?token=secret-token&id=session-native-1&profile=linkedin-jobpilot'),
+    );
+    expect(launcher.connectOverCDP).not.toHaveBeenCalled();
+    expect(result.reusedStoredSession).toBe(true);
+    expect(result.snapshot.browserlessConnectionMode).toBe('playwright-native');
+  });
+
+  it('respeta el token ya incluido en el endpoint Browserless', async () => {
+    const { launcher } = createLauncherMock();
+    const runtime = createPlaywrightBrowserRuntime({
+      launcher,
+      config: {
+        BROWSER_RUNTIME: 'browserless',
+        BROWSERLESS_WS_URL: 'wss://browserless.example.com/chromium/playwright?token=inline-token',
+        BROWSERLESS_TOKEN: 'should-not-be-used',
+        PLAYWRIGHT_HEADLESS: true,
+        BROWSER_SESSION_STATE_DIR: 'storage/browser-sessions',
+      },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
+    });
+
+    await runtime.startSession({
+      sessionId: 'session-inline-token',
+      provider: 'LINKEDIN_JOBS',
+      startUrl: 'https://www.linkedin.com/jobs/',
+    });
+
+    expect(launcher.connect).toHaveBeenCalledWith(
+      expect.stringContaining('token=inline-token'),
+    );
+    expect(launcher.connect).not.toHaveBeenCalledWith(
+      expect.stringContaining('should-not-be-used'),
+    );
+  });
+
+  it('falla con un error claro cuando Browserless no esta configurado', async () => {
+    const { launcher } = createLauncherMock();
+    const runtime = createPlaywrightBrowserRuntime({
+      launcher,
+      config: {
+        BROWSER_RUNTIME: 'browserless',
+        BROWSERLESS_WS_URL: '',
+        BROWSERLESS_TOKEN: '',
+        PLAYWRIGHT_HEADLESS: true,
+      },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
+    });
+
+    await expect(
+      runtime.startSession({
+        sessionId: 'session-invalid',
+        provider: 'LINKEDIN_JOBS',
+        startUrl: 'https://www.linkedin.com/jobs/',
+      }),
+    ).rejects.toMatchObject({
+      code: 'BROWSERLESS_CONFIG_ERROR',
+      message: 'BROWSERLESS_WS_URL no esta configurado para el runtime remoto.',
+    });
   });
 });
