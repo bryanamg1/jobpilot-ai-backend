@@ -28,6 +28,7 @@ export function createPlaywrightBrowserRuntime(options = {}) {
   const launchOptions = options.launchOptions ?? {};
   const accessFn = options.accessFn ?? access;
   const mkdirFn = options.mkdirFn ?? mkdir;
+  const fetchFn = options.fetchFn ?? globalThis.fetch?.bind(globalThis);
 
   if (config.BROWSER_RUNTIME === BROWSER_RUNTIME.BROWSERLESS) {
     return createBrowserlessRuntime({
@@ -35,6 +36,7 @@ export function createPlaywrightBrowserRuntime(options = {}) {
       config,
       accessFn,
       mkdirFn,
+      fetchFn,
     });
   }
 
@@ -98,10 +100,14 @@ function createLocalRuntime({ launcher, config, launchOptions, accessFn, mkdirFn
       await handle.context.close();
       await handle.browser.close();
     },
+
+    async getRemoteControlUrl() {
+      return null;
+    },
   };
 }
 
-function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn }) {
+function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn, fetchFn }) {
   return {
     async startSession({ sessionId, provider, startUrl }) {
       const stateFilePath = resolveStateFilePath(
@@ -127,6 +133,8 @@ function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn }) {
         stateFilePath,
         runtimeKind: BROWSER_RUNTIME.BROWSERLESS,
         browserlessConnectionMode: connectionMode,
+        browserlessSessionId: sessionId,
+        browserlessWsUrl: browserlessUrl.toString(),
       };
       await persistStorageState(handle, mkdirFn);
 
@@ -151,6 +159,51 @@ function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn }) {
     async close(handle) {
       await persistStorageState(handle, mkdirFn);
       await handle.browser.close();
+    },
+
+    async getRemoteControlUrl(handle) {
+      if (!fetchFn) {
+        throw buildBrowserlessRemoteControlError(
+          'Este entorno no soporta fetch para resolver la sesion remota de Browserless.',
+          'Actualiza Node.js o verifica el runtime del backend.',
+        );
+      }
+
+      const sessionsUrl = buildBrowserlessSessionsUrl(handle.browserlessWsUrl);
+      const response = await fetchFn(sessionsUrl, {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw buildBrowserlessRemoteControlError(
+          'Browserless no devolvio la lista de sesiones activas.',
+          'Confirma que Browserless exponga /sessions y que EXTERNAL este configurado correctamente.',
+        );
+      }
+
+      const sessions = await response.json();
+      if (!Array.isArray(sessions)) {
+        throw buildBrowserlessRemoteControlError(
+          'Browserless devolvio una respuesta invalida al consultar /sessions.',
+          'Verifica la version y configuracion del servicio Browserless.',
+        );
+      }
+
+      const matchedSession = sessions.find((entry) =>
+        matchesBrowserlessSession(entry, handle.browserlessSessionId),
+      );
+
+      if (!matchedSession?.devtoolsFrontendUrl) {
+        throw buildBrowserlessRemoteControlError(
+          'No se encontro un visor remoto disponible para la sesion activa.',
+          'Confirma que la sesion siga abierta y que Browserless tenga EXTERNAL configurado.',
+        );
+      }
+
+      return buildBrowserlessRemoteControlUrl(sessionsUrl, matchedSession.devtoolsFrontendUrl);
     },
   };
 }
@@ -346,6 +399,49 @@ async function resolveBrowserlessPage(context) {
 function buildBrowserlessConfigError(message, suggestion) {
   const error = new Error(message);
   error.code = 'BROWSERLESS_CONFIG_ERROR';
+  error.suggestion = suggestion;
+  return error;
+}
+
+function buildBrowserlessSessionsUrl(browserlessWsUrl) {
+  const sourceUrl = new URL(browserlessWsUrl);
+  sourceUrl.protocol = sourceUrl.protocol === 'wss:' ? 'https:' : 'http:';
+  sourceUrl.pathname = '/sessions';
+  sourceUrl.hash = '';
+  return sourceUrl.toString();
+}
+
+function matchesBrowserlessSession(entry, sessionId) {
+  if (!entry || !sessionId) {
+    return false;
+  }
+
+  if (String(entry.trackingId ?? '').trim() === sessionId) {
+    return true;
+  }
+
+  const initialConnectUrl = String(entry.initialConnectURL ?? '');
+  return (
+    initialConnectUrl.includes(`id=${encodeURIComponent(sessionId)}`) ||
+    initialConnectUrl.includes(`id=${sessionId}`)
+  );
+}
+
+function buildBrowserlessRemoteControlUrl(sessionsUrl, devtoolsFrontendUrl) {
+  const baseUrl = new URL(sessionsUrl);
+  const remoteUrl = new URL(devtoolsFrontendUrl, baseUrl.origin);
+  const token = baseUrl.searchParams.get('token');
+
+  if (token && !remoteUrl.searchParams.get('token')) {
+    remoteUrl.searchParams.set('token', token);
+  }
+
+  return remoteUrl.toString();
+}
+
+function buildBrowserlessRemoteControlError(message, suggestion) {
+  const error = new Error(message);
+  error.code = 'BROWSERLESS_REMOTE_CONTROL_ERROR';
   error.suggestion = suggestion;
   return error;
 }

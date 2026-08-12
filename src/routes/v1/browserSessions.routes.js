@@ -44,6 +44,16 @@ export function createBrowserSessionsRouter({ browserSessionService }) {
     }),
   );
 
+  router.get(
+    '/:sessionId/remote-control',
+    asyncHandler(async (req, res) => {
+      const params = browserSessionParamsSchema.parse(req.params);
+      const remoteControlUrl = await browserSessionService.getRemoteControlUrl(params.sessionId);
+      res.setHeader('Cache-Control', 'no-store');
+      res.redirect(302, remoteControlUrl);
+    }),
+  );
+
   router.post(
     '/:sessionId/navigate',
     asyncHandler(async (req, res) => {

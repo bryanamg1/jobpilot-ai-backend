@@ -311,4 +311,84 @@ describe('playwrightBrowserRuntime', () => {
       message: 'BROWSERLESS_WS_URL no esta configurado para el runtime remoto.',
     });
   });
+
+  it('resuelve una URL temporal de control remoto usando /sessions de Browserless', async () => {
+    const { launcher } = createLauncherMock();
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          trackingId: 'session-remote-1',
+          devtoolsFrontendUrl:
+            '/devtools/inspector.html?wss=browserless.example.com/devtools/page/abc123',
+        },
+      ],
+    }));
+    const runtime = createPlaywrightBrowserRuntime({
+      launcher,
+      fetchFn,
+      config: {
+        BROWSER_RUNTIME: 'browserless',
+        BROWSERLESS_WS_URL: 'wss://browserless.example.com/chromium/playwright',
+        BROWSERLESS_TOKEN: 'secret-token',
+        PLAYWRIGHT_HEADLESS: true,
+        BROWSER_SESSION_STATE_DIR: 'storage/browser-sessions',
+      },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
+    });
+
+    const result = await runtime.startSession({
+      sessionId: 'session-remote-1',
+      provider: 'LINKEDIN_JOBS',
+      startUrl: 'https://www.linkedin.com/jobs/',
+    });
+
+    const remoteControlUrl = await runtime.getRemoteControlUrl(result.handle);
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      'https://browserless.example.com/sessions?token=secret-token&id=session-remote-1',
+      expect.objectContaining({
+        method: 'GET',
+      }),
+    );
+    expect(remoteControlUrl).toBe(
+      'https://browserless.example.com/devtools/inspector.html?wss=browserless.example.com%2Fdevtools%2Fpage%2Fabc123&token=secret-token',
+    );
+  });
+
+  it('falla con un error claro cuando Browserless no devuelve visor remoto', async () => {
+    const { launcher } = createLauncherMock();
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [],
+    }));
+    const runtime = createPlaywrightBrowserRuntime({
+      launcher,
+      fetchFn,
+      config: {
+        BROWSER_RUNTIME: 'browserless',
+        BROWSERLESS_WS_URL: 'wss://browserless.example.com/chromium/playwright',
+        BROWSERLESS_TOKEN: 'secret-token',
+        PLAYWRIGHT_HEADLESS: true,
+      },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
+    });
+
+    const result = await runtime.startSession({
+      sessionId: 'session-remote-missing',
+      provider: 'LINKEDIN_JOBS',
+      startUrl: 'https://www.linkedin.com/jobs/',
+    });
+
+    await expect(runtime.getRemoteControlUrl(result.handle)).rejects.toMatchObject({
+      code: 'BROWSERLESS_REMOTE_CONTROL_ERROR',
+      message: 'No se encontro un visor remoto disponible para la sesion activa.',
+    });
+  });
 });

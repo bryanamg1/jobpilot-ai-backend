@@ -64,6 +64,37 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
       return hydrateSessionRuntimeState(session, activeSessions);
     },
 
+    async getRemoteControlUrl(sessionId) {
+      const { record, handle } = await getManagedSession(repository, activeSessions, sessionId);
+
+      if (record.metadata?.runtimeKind !== 'browserless') {
+        throw new HttpError(409, 'La sesion supervisada activa no usa Browserless remoto.', {
+          sessionId,
+          runtimeKind: record.metadata?.runtimeKind ?? 'local',
+        });
+      }
+
+      if (typeof runtime.getRemoteControlUrl !== 'function') {
+        throw new HttpError(503, 'El runtime actual no soporta apertura remota supervisada.', {
+          sessionId,
+        });
+      }
+
+      try {
+        return await executeRuntimeCall(
+          breaker,
+          () => retryOperation(() => runtime.getRemoteControlUrl(handle), { attempts: 2, baseDelayMs: 100 }),
+        );
+      } catch (error) {
+        const remoteControlError = describeBrowserRemoteControlError(error);
+        throw new HttpError(503, remoteControlError.message, {
+          errorCode: remoteControlError.errorCode,
+          reason: remoteControlError.reason,
+          suggestion: remoteControlError.suggestion,
+        });
+      }
+    },
+
     async startSession(input) {
       const providerConfig = PROVIDER_CONFIG[input.provider];
       if (!providerConfig) {
@@ -477,5 +508,42 @@ function describeBrowserLaunchError(error) {
     message: 'No se pudo iniciar la sesion supervisada del navegador.',
     reason: rawMessage || 'Fallo generico al iniciar Playwright.',
     suggestion: 'Revisa la configuracion de Playwright y vuelve a intentar.',
+  };
+}
+
+function describeBrowserRemoteControlError(error) {
+  if (error?.code === 'BROWSERLESS_REMOTE_CONTROL_ERROR') {
+    return {
+      errorCode: 'BROWSERLESS_REMOTE_CONTROL_ERROR',
+      message: 'No se pudo abrir el navegador remoto de Browserless para esta sesion.',
+      reason: String(error?.message ?? 'No hay visor remoto disponible para la sesion activa.'),
+      suggestion:
+        error?.suggestion ??
+        'Confirma que la sesion siga activa y que Browserless exponga el endpoint /sessions con EXTERNAL configurado.',
+    };
+  }
+
+  const rawMessage = String(error?.message ?? '').trim();
+  const normalizedMessage = rawMessage.toLowerCase();
+
+  if (
+    normalizedMessage.includes('403') ||
+    normalizedMessage.includes('401') ||
+    normalizedMessage.includes('forbidden') ||
+    normalizedMessage.includes('unauthorized')
+  ) {
+    return {
+      errorCode: 'BROWSERLESS_REMOTE_CONTROL_AUTH_FAILED',
+      message: 'Browserless rechazo la consulta del visor remoto para esta sesion.',
+      reason: rawMessage || 'Browserless devolvio un error de autenticacion al consultar /sessions.',
+      suggestion: 'Verifica el token configurado y confirma que la URL publica de Browserless siga siendo valida.',
+    };
+  }
+
+  return {
+    errorCode: 'BROWSERLESS_REMOTE_CONTROL_FAILED',
+    message: 'No se pudo resolver el visor remoto para la sesion supervisada.',
+    reason: rawMessage || 'Fallo generico al consultar el visor remoto de Browserless.',
+    suggestion: 'Revisa la configuracion de Browserless y vuelve a intentar con la sesion aun activa.',
   };
 }

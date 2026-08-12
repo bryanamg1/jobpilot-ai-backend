@@ -374,4 +374,70 @@ describe('browserSessionService', () => {
       }),
     });
   });
+
+  it('devuelve la URL temporal del navegador remoto para una sesion Browserless activa', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => ({
+        handle: { id: 'runtime-handle-remote-1' },
+        snapshot: {
+          title: 'LinkedIn Jobs',
+          url: 'https://www.linkedin.com/jobs/',
+          visibleText: 'LinkedIn Jobs Home',
+          capturedAt: '2026-08-05T20:00:00.000Z',
+          runtimeKind: 'browserless',
+          browserlessConnectionMode: 'playwright-native',
+          isLinkedIn: true,
+          isJobsSection: true,
+          isJobView: false,
+          requiresAttention: true,
+          attentionReasons: ['LOGIN_REQUIRED'],
+        },
+      })),
+      getRemoteControlUrl: vi.fn(async () => 'https://browserless.example.com/devtools/inspector.html?token=temp'),
+      getSnapshot: vi.fn(),
+      navigate: vi.fn(),
+      close: vi.fn(),
+    };
+    const service = createBrowserSessionService(repository, auditService, {}, { runtime });
+    const session = await service.startSession({ provider: 'LINKEDIN_JOBS' });
+
+    const remoteControlUrl = await service.getRemoteControlUrl(session.id);
+
+    expect(remoteControlUrl).toBe('https://browserless.example.com/devtools/inspector.html?token=temp');
+    expect(runtime.getRemoteControlUrl).toHaveBeenCalledWith(expect.objectContaining({ id: 'runtime-handle-remote-1' }));
+  });
+
+  it('rechaza abrir control remoto si la sesion activa no usa Browserless', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => ({
+        handle: { id: 'runtime-handle-local-1' },
+        snapshot: {
+          title: 'LinkedIn Jobs',
+          url: 'https://www.linkedin.com/jobs/',
+          visibleText: 'LinkedIn Jobs Home',
+          capturedAt: '2026-08-05T20:00:00.000Z',
+          runtimeKind: 'local',
+          isLinkedIn: true,
+          isJobsSection: true,
+          isJobView: false,
+          requiresAttention: false,
+          attentionReasons: [],
+        },
+      })),
+      getSnapshot: vi.fn(),
+      navigate: vi.fn(),
+      close: vi.fn(),
+    };
+    const service = createBrowserSessionService(repository, auditService, {}, { runtime });
+    const session = await service.startSession({ provider: 'LINKEDIN_JOBS' });
+
+    await expect(service.getRemoteControlUrl(session.id)).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'La sesion supervisada activa no usa Browserless remoto.',
+    });
+  });
 });

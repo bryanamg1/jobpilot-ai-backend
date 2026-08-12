@@ -109,4 +109,30 @@ describe('browser session routes', () => {
     expect(response.body.data.job.id).toBe('job-from-browser-1');
     expect(captureCurrentJob).toHaveBeenCalledWith('browser-session-2');
   });
+
+  it('redirige a una URL temporal de Browserless para control remoto', async () => {
+    const getRemoteControlUrl = vi.fn(async () => 'https://browserless.example.com/devtools/inspector.html?token=temp');
+
+    const app = buildApp({
+      browserSessionService: {
+        listSessions: vi.fn(async () => []),
+        startSession: vi.fn(),
+        getSession: vi.fn(),
+        getRemoteControlUrl,
+        refreshSession: vi.fn(),
+        navigateSession: vi.fn(),
+        captureCurrentJob: vi.fn(),
+        closeSession: vi.fn(),
+      },
+    });
+
+    const response = await request(app).get('/api/v1/browser-sessions/browser-session-3/remote-control').send();
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe(
+      'https://browserless.example.com/devtools/inspector.html?token=temp',
+    );
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(getRemoteControlUrl).toHaveBeenCalledWith('browser-session-3');
+  });
 });
