@@ -15,6 +15,7 @@ import { createAuditsRouter } from './routes/v1/audits.routes.js';
 import { createAnswersRouter } from './routes/v1/answers.routes.js';
 import { createAutomationRouter } from './routes/v1/automation.routes.js';
 import { createBrowserSessionsRouter } from './routes/v1/browserSessions.routes.js';
+import { createDesktopAgentRouter } from './routes/v1/desktopAgent.routes.js';
 import { createAuditService } from './services/audit/auditService.js';
 import { createAnswerLibraryService } from './services/answers/answerLibraryService.js';
 import { createApplicationRunnerService } from './services/applications/applicationRunnerService.js';
@@ -23,6 +24,7 @@ import { createAutomationSchedulerService } from './services/automation/automati
 import { createAutomationSettingsService } from './services/automation/automationSettingsService.js';
 import { createBrowserSessionService } from './services/browser/browserSessionService.js';
 import { createDashboardService } from './services/dashboard/dashboardService.js';
+import { createDesktopAgentService } from './services/desktopAgent/desktopAgentService.js';
 import { createGmailIntegrationService } from './services/gmail/gmailIntegrationService.js';
 import { createHealthService } from './services/health/healthService.js';
 import { createJobApprovalService } from './services/jobs/jobApprovalService.js';
@@ -86,7 +88,10 @@ export function buildApp(options = {}) {
     options.browserSessionService ??
     createBrowserSessionService(repository, auditService, jobOfferService, {
       breaker: reliabilityRegistry.getBreaker('playwright'),
+      config: env,
     });
+  const desktopAgentService =
+    options.desktopAgentService ?? createDesktopAgentService(repository, auditService, { config: env });
   const gmailIntegrationService =
     options.gmailIntegrationService ??
     createGmailIntegrationService(repository, auditService, jobDraftService, {
@@ -110,6 +115,7 @@ export function buildApp(options = {}) {
       reliabilityRegistry,
       automationSettingsService,
       automationSchedulerService,
+      desktopAgentService,
     });
   const profileService = options.profileService ?? createProfileService(repository, auditService);
   const resumeService = options.resumeService ?? createResumeService(repository, auditService);
@@ -174,6 +180,13 @@ export function buildApp(options = {}) {
   app.use(express.json({ limit: '8mb' }));
 
   app.use('/api/v1/health', createHealthRouter({ healthService }));
+  app.use(
+    '/api/v1/desktop-agent',
+    createDesktopAgentRouter({
+      desktopAgentService,
+      agentToken: options.desktopAgentToken ?? env.DESKTOP_AGENT_TOKEN,
+    }),
+  );
   app.use('/api/v1/approvals', createApprovalsRouter({ approvalRequestService }));
   app.use('/api/v1/audits', createAuditsRouter({ auditService }));
   app.use('/api/v1/automation', createAutomationRouter({ automationSettingsService, applicationRunnerService }));

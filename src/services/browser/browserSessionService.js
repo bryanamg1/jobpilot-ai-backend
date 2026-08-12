@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { env } from '../../config/env.js';
 import { BROWSER_SESSION_PROVIDER, BROWSER_SESSION_STATUS } from '../../constants/browserSessions.js';
 import { HttpError } from '../../lib/httpError.js';
 import { retryOperation } from '../../lib/retry.js';
+import { createDesktopAgentBrowserRuntime } from './desktopAgentBrowserRuntime.js';
 import { createPlaywrightBrowserRuntime } from './playwrightBrowserRuntime.js';
 
 const LINKEDIN_JOBS_START_URL = 'https://www.linkedin.com/jobs/';
@@ -45,7 +47,14 @@ const PROVIDER_CONFIG = {
 };
 
 export function createBrowserSessionService(repository, auditService, jobOfferService, options = {}) {
-  const runtime = options.runtime ?? createPlaywrightBrowserRuntime(options.runtimeOptions);
+  const config = options.config ?? env;
+  const runtime =
+    options.runtime ??
+    (config.BROWSER_RUNTIME === 'desktop_agent'
+      ? createDesktopAgentBrowserRuntime(repository, {
+          pollIntervalMs: config.DESKTOP_AGENT_POLL_INTERVAL_MS,
+        })
+      : createPlaywrightBrowserRuntime(options.runtimeOptions));
   const activeSessions = options.activeSessions ?? new Map();
   const breaker = options.breaker ?? null;
 

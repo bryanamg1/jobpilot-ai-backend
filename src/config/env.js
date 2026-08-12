@@ -37,12 +37,17 @@ const envSchema = z.object({
     .string()
     .default('("linkedin" OR "job alert" OR "hiring" OR "vacante" OR "oportunidad laboral") newer_than:30d'),
   GOOGLE_GMAIL_MAX_RESULTS: z.coerce.number().default(10),
-  BROWSER_RUNTIME: z.enum(['local', 'browserless']).default('local'),
+  BROWSER_RUNTIME: z.enum(['local', 'browserless', 'desktop_agent']).default('local'),
   BROWSERLESS_WS_URL: z.string().optional(),
   BROWSERLESS_TOKEN: z.string().optional(),
   BROWSERLESS_PROFILE_NAME: z.string().optional(),
   PLAYWRIGHT_HEADLESS: z.enum(['true', 'false']).optional(),
   BROWSER_SESSION_STATE_DIR: z.string().default('storage/browser-sessions'),
+  DESKTOP_AGENT_ENABLED: z.enum(['true', 'false']).default('true'),
+  DESKTOP_AGENT_TOKEN: z.string().optional(),
+  JOBPILOT_API_URL: z.string().default('http://localhost:4300/api/v1'),
+  DESKTOP_AGENT_POLL_INTERVAL_MS: z.coerce.number().default(5_000),
+  DESKTOP_AGENT_HEARTBEAT_MS: z.coerce.number().default(30_000),
   RESUME_STORAGE_DIR: z.string().default('storage/resumes'),
   RESUME_MAX_BYTES: z.coerce.number().default(5 * 1024 * 1024),
   EXTERNAL_RETRY_ATTEMPTS: z.coerce.number().default(2),
@@ -59,6 +64,7 @@ const parsed = envSchema.parse(process.env);
 
 export const env = {
   ...parsed,
+  DESKTOP_AGENT_ENABLED: parsed.DESKTOP_AGENT_ENABLED === 'true',
   PLAYWRIGHT_HEADLESS:
     typeof parsed.PLAYWRIGHT_HEADLESS === 'string'
       ? parsed.PLAYWRIGHT_HEADLESS === 'true'

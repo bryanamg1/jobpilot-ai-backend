@@ -7,7 +7,6 @@ export function createHealthService(repository, options = {}) {
   const reliabilityRegistry = options.reliabilityRegistry ?? null;
   const automationSettingsService = options.automationSettingsService ?? null;
   const automationSchedulerService = options.automationSchedulerService ?? null;
-
   return {
     async getStatus() {
       const dependency = await repository.ping();
@@ -18,6 +17,8 @@ export function createHealthService(repository, options = {}) {
         killSwitchEnabled: Boolean(config.AUTOMATION_KILL_SWITCH),
       };
       const gmailStatus = gmailIntegrationService ? await gmailIntegrationService.getStatus() : null;
+      const desktopAgents = (await repository.listDesktopAgents?.({ limit: 5 })) ?? [];
+      const latestDesktopAgent = desktopAgents[0] ?? null;
       const queueStatus = operationsQueueService?.getStatus() ?? null;
       const reliabilityStatus = reliabilityRegistry?.getStatus() ?? {};
       const openAiStatus = {
@@ -94,6 +95,15 @@ export function createHealthService(repository, options = {}) {
           nodeVersion: process.version,
           requestCorrelation: true,
           redisConfigured: Boolean(config.REDIS_URL),
+          desktopAgent: {
+            enabled: Boolean(config.DESKTOP_AGENT_ENABLED),
+            status: latestDesktopAgent?.status ?? 'DISCONNECTED',
+            connected: Boolean(latestDesktopAgent && latestDesktopAgent.status !== 'OFFLINE'),
+            lastHeartbeatAt: latestDesktopAgent?.lastHeartbeatAt ?? null,
+            version: latestDesktopAgent?.version ?? null,
+            os: latestDesktopAgent?.os ?? null,
+            hostname: latestDesktopAgent?.hostname ?? null,
+          },
         },
         timestamp: new Date().toISOString(),
       };

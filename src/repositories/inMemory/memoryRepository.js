@@ -68,6 +68,57 @@ export function createMemoryRepository() {
       runtime.agentRuns[index] = structuredClone(record);
       return structuredClone(runtime.agentRuns[index]);
     },
+    async listDesktopAgents(filters = {}) {
+      const items = runtime.desktopAgents.toSorted((left, right) =>
+        String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')),
+      );
+      return items.slice(0, filters.limit ?? 20);
+    },
+    async getDesktopAgentById(agentId) {
+      return runtime.desktopAgents.find((entry) => entry.id === agentId) ?? null;
+    },
+    async saveDesktopAgent(record) {
+      runtime.desktopAgents.push(structuredClone(record));
+      return structuredClone(record);
+    },
+    async updateDesktopAgent(record) {
+      const index = runtime.desktopAgents.findIndex((entry) => entry.id === record.id);
+      if (index === -1) {
+        return null;
+      }
+      runtime.desktopAgents[index] = structuredClone(record);
+      return structuredClone(runtime.desktopAgents[index]);
+    },
+    async saveBrowserJob(record) {
+      runtime.browserJobs.push(structuredClone(record));
+      return structuredClone(record);
+    },
+    async getBrowserJobById(jobId) {
+      return runtime.browserJobs.find((entry) => entry.id === jobId) ?? null;
+    },
+    async updateBrowserJob(record) {
+      const index = runtime.browserJobs.findIndex((entry) => entry.id === record.id);
+      if (index === -1) {
+        return null;
+      }
+      runtime.browserJobs[index] = structuredClone(record);
+      return structuredClone(runtime.browserJobs[index]);
+    },
+    async claimNextBrowserJob(agentId) {
+      const nextJob = runtime.browserJobs
+        .filter((entry) => entry.status === 'PENDING')
+        .toSorted((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)))[0];
+
+      if (!nextJob) {
+        return null;
+      }
+
+      nextJob.status = 'CLAIMED';
+      nextJob.agentId = agentId;
+      nextJob.claimedAt = new Date().toISOString();
+      nextJob.updatedAt = nextJob.claimedAt;
+      return structuredClone(nextJob);
+    },
     async listBrowserSessions() {
       return runtime.browserSessions.toSorted(compareBrowserSessions);
     },

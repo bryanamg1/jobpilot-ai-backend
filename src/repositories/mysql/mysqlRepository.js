@@ -284,6 +284,177 @@ export function createMysqlRepository() {
       );
       return record;
     },
+    async listDesktopAgents(filters = {}) {
+      const [rows] = await pool.query(
+        `
+          SELECT id, status, version, os, hostname, metadata_json, last_heartbeat_at, created_at, updated_at
+          FROM desktop_agents
+          ORDER BY updated_at DESC, created_at DESC
+          LIMIT ?
+        `,
+        [filters.limit ?? 20],
+      );
+
+      return rows.map(mapDesktopAgentRow);
+    },
+    async getDesktopAgentById(agentId) {
+      const [rows] = await pool.query(
+        `
+          SELECT id, status, version, os, hostname, metadata_json, last_heartbeat_at, created_at, updated_at
+          FROM desktop_agents
+          WHERE id = ?
+          LIMIT 1
+        `,
+        [agentId],
+      );
+
+      return rows[0] ? mapDesktopAgentRow(rows[0]) : null;
+    },
+    async saveDesktopAgent(record) {
+      await pool.query(
+        `
+          INSERT INTO desktop_agents (
+            id, status, version, os, hostname, metadata_json, last_heartbeat_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        `,
+        [
+          record.id,
+          record.status,
+          record.version,
+          record.os,
+          record.hostname,
+          JSON.stringify(record.metadata),
+          normalizeMysqlDateTime(record.lastHeartbeatAt),
+        ],
+      );
+
+      return record;
+    },
+    async updateDesktopAgent(record) {
+      await pool.query(
+        `
+          UPDATE desktop_agents
+          SET status = ?, version = ?, os = ?, hostname = ?, metadata_json = ?, last_heartbeat_at = ?, updated_at = NOW()
+          WHERE id = ?
+        `,
+        [
+          record.status,
+          record.version,
+          record.os,
+          record.hostname,
+          JSON.stringify(record.metadata),
+          normalizeMysqlDateTime(record.lastHeartbeatAt),
+          record.id,
+        ],
+      );
+
+      return record;
+    },
+    async saveBrowserJob(record) {
+      await pool.query(
+        `
+          INSERT INTO browser_jobs (
+            id, session_id, agent_id, job_type, status, payload_json, result_json, error_json, claimed_at, completed_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        `,
+        [
+          record.id,
+          record.sessionId,
+          record.agentId,
+          record.jobType,
+          record.status,
+          JSON.stringify(record.payload),
+          record.result ? JSON.stringify(record.result) : null,
+          record.error ? JSON.stringify(record.error) : null,
+          normalizeMysqlDateTime(record.claimedAt),
+          normalizeMysqlDateTime(record.completedAt),
+        ],
+      );
+
+      return record;
+    },
+    async getBrowserJobById(jobId) {
+      const [rows] = await pool.query(
+        `
+          SELECT id, session_id, agent_id, job_type, status, payload_json, result_json, error_json, claimed_at, completed_at, created_at, updated_at
+          FROM browser_jobs
+          WHERE id = ?
+          LIMIT 1
+        `,
+        [jobId],
+      );
+
+      return rows[0] ? mapBrowserJobRow(rows[0]) : null;
+    },
+    async updateBrowserJob(record) {
+      await pool.query(
+        `
+          UPDATE browser_jobs
+          SET session_id = ?, agent_id = ?, job_type = ?, status = ?, payload_json = ?, result_json = ?, error_json = ?, claimed_at = ?, completed_at = ?, updated_at = NOW()
+          WHERE id = ?
+        `,
+        [
+          record.sessionId,
+          record.agentId,
+          record.jobType,
+          record.status,
+          JSON.stringify(record.payload),
+          record.result ? JSON.stringify(record.result) : null,
+          record.error ? JSON.stringify(record.error) : null,
+          normalizeMysqlDateTime(record.claimedAt),
+          normalizeMysqlDateTime(record.completedAt),
+          record.id,
+        ],
+      );
+
+      return record;
+    },
+    async claimNextBrowserJob(agentId) {
+      const connection = await pool.getConnection();
+
+      try {
+        await connection.beginTransaction();
+        const [rows] = await connection.query(
+          `
+            SELECT id, session_id, agent_id, job_type, status, payload_json, result_json, error_json, claimed_at, completed_at, created_at, updated_at
+            FROM browser_jobs
+            WHERE status = 'PENDING'
+            ORDER BY created_at ASC
+            LIMIT 1
+            FOR UPDATE
+          `,
+        );
+
+        if (!rows[0]) {
+          await connection.rollback();
+          return null;
+        }
+
+        const job = mapBrowserJobRow(rows[0]);
+        const claimedAt = new Date().toISOString();
+        job.status = 'CLAIMED';
+        job.agentId = agentId;
+        job.claimedAt = claimedAt;
+        job.updatedAt = claimedAt;
+
+        await connection.query(
+          `
+            UPDATE browser_jobs
+            SET status = 'CLAIMED', agent_id = ?, claimed_at = ?, updated_at = NOW()
+            WHERE id = ?
+          `,
+          [agentId, normalizeMysqlDateTime(claimedAt), job.id],
+        );
+
+        await connection.commit();
+        return job;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+    },
     async listBrowserSessions() {
       const [rows] = await pool.query(
         `
@@ -930,6 +1101,37 @@ function mapAgentRunRow(row) {
     startedAt: serializeDate(row.started_at),
     finishedAt: row.finished_at ? serializeDate(row.finished_at) : null,
     createdAt: serializeDate(row.created_at),
+  };
+}
+
+function mapDesktopAgentRow(row) {
+  return {
+    id: row.id,
+    status: row.status,
+    version: row.version,
+    os: row.os,
+    hostname: row.hostname,
+    metadata: parseStoredJson(row.metadata_json),
+    lastHeartbeatAt: row.last_heartbeat_at ? serializeDate(row.last_heartbeat_at) : null,
+    createdAt: serializeDate(row.created_at),
+    updatedAt: serializeDate(row.updated_at),
+  };
+}
+
+function mapBrowserJobRow(row) {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    agentId: row.agent_id,
+    jobType: row.job_type,
+    status: row.status,
+    payload: parseStoredJson(row.payload_json),
+    result: parseStoredJson(row.result_json),
+    error: parseStoredJson(row.error_json),
+    claimedAt: row.claimed_at ? serializeDate(row.claimed_at) : null,
+    completedAt: row.completed_at ? serializeDate(row.completed_at) : null,
+    createdAt: serializeDate(row.created_at),
+    updatedAt: serializeDate(row.updated_at),
   };
 }
 

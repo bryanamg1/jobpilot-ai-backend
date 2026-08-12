@@ -10,6 +10,8 @@ const runtime = {
   automationSettings: null,
   applications: [],
   agentRuns: [],
+  desktopAgents: [],
+  browserJobs: [],
   audits: [],
 };
 
