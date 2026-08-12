@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { env } from '../../config/env.js';
 
 const MAX_CAPTURE_CHARS = 20_000;
 const HIRING_SIGNAL_PATTERNS = [
@@ -16,11 +17,14 @@ const VISIBLE_EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu;
 
 export function createPlaywrightBrowserRuntime(options = {}) {
   const launcher = options.launcher ?? chromium;
+  const config = options.config ?? env;
+  const launchOptions = options.launchOptions ?? {};
 
   return {
     async startSession({ startUrl }) {
       const browser = await launcher.launch({
-        headless: false,
+        ...launchOptions,
+        headless: config.PLAYWRIGHT_HEADLESS,
       });
       const context = await browser.newContext({
         ignoreHTTPSErrors: true,

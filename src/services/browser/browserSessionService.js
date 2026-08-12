@@ -89,9 +89,11 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
             ),
         );
       } catch (error) {
-        throw new HttpError(503, 'Could not launch the supervised browser session', {
-          reason: error.message,
-          suggestion: 'Verify that Playwright Chromium is installed locally and try again.',
+        const launchError = describeBrowserLaunchError(error);
+        throw new HttpError(503, launchError.message, {
+          errorCode: launchError.errorCode,
+          reason: launchError.reason,
+          suggestion: launchError.suggestion,
         });
       }
 
@@ -392,4 +394,43 @@ function mapProviderToSourceType(provider) {
     default:
       return 'MANUAL';
   }
+}
+
+function describeBrowserLaunchError(error) {
+  const rawMessage = String(error?.message ?? '').trim();
+  const normalizedMessage = rawMessage.toLowerCase();
+
+  if (
+    normalizedMessage.includes("executable doesn't exist") ||
+    normalizedMessage.includes('failed to launch browser') ||
+    normalizedMessage.includes('please run the following command')
+  ) {
+    return {
+      errorCode: 'PLAYWRIGHT_BROWSER_MISSING',
+      message: 'No se pudo iniciar la sesion supervisada porque Chromium no esta instalado en este entorno.',
+      reason: rawMessage || 'Chromium no esta disponible para Playwright.',
+      suggestion: 'Instala Chromium para Playwright durante el build y vuelve a intentar.',
+    };
+  }
+
+  if (
+    normalizedMessage.includes('xserver') ||
+    normalizedMessage.includes('headed browser without having a xserver') ||
+    normalizedMessage.includes('missing x server') ||
+    normalizedMessage.includes('no display')
+  ) {
+    return {
+      errorCode: 'PLAYWRIGHT_DISPLAY_REQUIRED',
+      message: 'No se pudo iniciar la sesion supervisada en modo visible porque este entorno no tiene display grafico.',
+      reason: rawMessage || 'El entorno no dispone de XServer o display grafico.',
+      suggestion: 'En Railway usa PLAYWRIGHT_HEADLESS=true. Solo usa un display virtual si realmente necesitas modo visible.',
+    };
+  }
+
+  return {
+    errorCode: 'PLAYWRIGHT_LAUNCH_FAILED',
+    message: 'No se pudo iniciar la sesion supervisada del navegador.',
+    reason: rawMessage || 'Fallo generico al iniciar Playwright.',
+    suggestion: 'Revisa la configuracion de Playwright y vuelve a intentar.',
+  };
 }

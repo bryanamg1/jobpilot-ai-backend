@@ -291,4 +291,64 @@ describe('browserSessionService', () => {
     });
     expect(jobOfferService.createFromManualInput).not.toHaveBeenCalled();
   });
+
+  it('clasifica el error cuando Chromium no esta instalado', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => {
+        throw new Error("browserType.launch: Executable doesn't exist at /ms-playwright/chromium");
+      }),
+    };
+    const service = createBrowserSessionService(repository, auditService, {}, { runtime });
+
+    await expect(service.startSession({ provider: 'LINKEDIN_JOBS' })).rejects.toMatchObject({
+      statusCode: 503,
+      message: 'No se pudo iniciar la sesion supervisada porque Chromium no esta instalado en este entorno.',
+      details: expect.objectContaining({
+        errorCode: 'PLAYWRIGHT_BROWSER_MISSING',
+      }),
+    });
+  });
+
+  it('clasifica el error cuando falta XServer o display grafico', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => {
+        throw new Error(
+          "browserType.launch: Looks like you launched a headed browser without having a XServer running.",
+        );
+      }),
+    };
+    const service = createBrowserSessionService(repository, auditService, {}, { runtime });
+
+    await expect(service.startSession({ provider: 'LINKEDIN_JOBS' })).rejects.toMatchObject({
+      statusCode: 503,
+      message:
+        'No se pudo iniciar la sesion supervisada en modo visible porque este entorno no tiene display grafico.',
+      details: expect.objectContaining({
+        errorCode: 'PLAYWRIGHT_DISPLAY_REQUIRED',
+      }),
+    });
+  });
+
+  it('clasifica el error generico de launch', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => {
+        throw new Error('browserType.launch: Target page, context or browser has been closed');
+      }),
+    };
+    const service = createBrowserSessionService(repository, auditService, {}, { runtime });
+
+    await expect(service.startSession({ provider: 'LINKEDIN_JOBS' })).rejects.toMatchObject({
+      statusCode: 503,
+      message: 'No se pudo iniciar la sesion supervisada del navegador.',
+      details: expect.objectContaining({
+        errorCode: 'PLAYWRIGHT_LAUNCH_FAILED',
+      }),
+    });
+  });
 });

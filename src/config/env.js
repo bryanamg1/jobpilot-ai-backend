@@ -37,6 +37,7 @@ const envSchema = z.object({
     .string()
     .default('("linkedin" OR "job alert" OR "hiring" OR "vacante" OR "oportunidad laboral") newer_than:30d'),
   GOOGLE_GMAIL_MAX_RESULTS: z.coerce.number().default(10),
+  PLAYWRIGHT_HEADLESS: z.enum(['true', 'false']).optional(),
   RESUME_STORAGE_DIR: z.string().default('storage/resumes'),
   RESUME_MAX_BYTES: z.coerce.number().default(5 * 1024 * 1024),
   EXTERNAL_RETRY_ATTEMPTS: z.coerce.number().default(2),
@@ -53,6 +54,10 @@ const parsed = envSchema.parse(process.env);
 
 export const env = {
   ...parsed,
+  PLAYWRIGHT_HEADLESS:
+    typeof parsed.PLAYWRIGHT_HEADLESS === 'string'
+      ? parsed.PLAYWRIGHT_HEADLESS === 'true'
+      : parsed.NODE_ENV === 'production',
   isTest: parsed.NODE_ENV === 'test',
   isProduction: parsed.NODE_ENV === 'production',
   openAiConfigured: parsed.OPENAI_FEATURE_MODE === 'assist' && Boolean(parsed.OPENAI_API_KEY),
