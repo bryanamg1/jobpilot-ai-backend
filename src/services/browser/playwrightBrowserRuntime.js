@@ -74,6 +74,7 @@ function createLocalRuntime({ launcher, config, launchOptions, accessFn, mkdirFn
         page,
         stateFilePath,
         runtimeKind: BROWSER_RUNTIME.LOCAL,
+        closePolicy: 'close_context_and_browser',
       };
       await persistStorageState(handle, mkdirFn);
 
@@ -96,9 +97,7 @@ function createLocalRuntime({ launcher, config, launchOptions, accessFn, mkdirFn
     },
 
     async close(handle) {
-      await persistStorageState(handle, mkdirFn);
-      await handle.context.close();
-      await handle.browser.close();
+      await closeLocalHandle(handle, mkdirFn);
     },
 
     async getRemoteControlUrl() {
@@ -135,6 +134,7 @@ function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn, fetchFn
         browserlessConnectionMode: connectionMode,
         browserlessSessionId: sessionId,
         browserlessWsUrl: browserlessUrl.toString(),
+        closePolicy: 'explicit_browser_close_only',
       };
       await persistStorageState(handle, mkdirFn);
 
@@ -157,8 +157,7 @@ function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn, fetchFn
     },
 
     async close(handle) {
-      await persistStorageState(handle, mkdirFn);
-      await handle.browser.close();
+      await closeBrowserlessHandle(handle, mkdirFn);
     },
 
     async getRemoteControlUrl(handle) {
@@ -312,6 +311,17 @@ async function persistStorageState(handle, mkdirFn) {
   } catch {
     // Best effort: supervised browsing should still work even if state persistence fails.
   }
+}
+
+async function closeLocalHandle(handle, mkdirFn) {
+  await persistStorageState(handle, mkdirFn);
+  await handle.context.close();
+  await handle.browser.close();
+}
+
+async function closeBrowserlessHandle(handle, mkdirFn) {
+  await persistStorageState(handle, mkdirFn);
+  await handle.browser.close();
 }
 
 function buildBrowserlessWebSocketUrl(config, sessionId) {

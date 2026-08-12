@@ -219,6 +219,7 @@ describe('playwrightBrowserRuntime', () => {
     expect(browser.newContext).not.toHaveBeenCalled();
     expect(result.snapshot.runtimeKind).toBe('browserless');
     expect(result.snapshot.browserlessConnectionMode).toBe('cdp');
+    expect(browser.close).not.toHaveBeenCalled();
   });
 
   it('usa connect cuando el endpoint Browserless es Playwright nativo', async () => {
@@ -390,5 +391,36 @@ describe('playwrightBrowserRuntime', () => {
       code: 'BROWSERLESS_REMOTE_CONTROL_ERROR',
       message: 'No se encontro un visor remoto disponible para la sesion activa.',
     });
+  });
+
+  it('cierra el browser remoto solo cuando se solicita cerrar explicitamente la sesion Browserless', async () => {
+    const { launcher, browser, context } = createLauncherMock();
+    const runtime = createPlaywrightBrowserRuntime({
+      launcher,
+      config: {
+        BROWSER_RUNTIME: 'browserless',
+        BROWSERLESS_WS_URL: 'wss://browserless.example.com/chromium/playwright',
+        BROWSERLESS_TOKEN: 'secret-token',
+        PLAYWRIGHT_HEADLESS: true,
+      },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
+    });
+
+    const result = await runtime.startSession({
+      sessionId: 'session-close-browserless-1',
+      provider: 'LINKEDIN_JOBS',
+      startUrl: 'https://www.linkedin.com/jobs/',
+    });
+
+    expect(browser.close).not.toHaveBeenCalled();
+    expect(context.close).not.toHaveBeenCalled();
+
+    await runtime.close(result.handle);
+
+    expect(context.close).not.toHaveBeenCalled();
+    expect(browser.close).toHaveBeenCalledTimes(1);
   });
 });
