@@ -750,7 +750,7 @@ export function createMysqlRepository() {
         [
           record.id,
           record.source.id,
-          record.jobOffer.company,
+          record.jobOffer.company ?? '',
           record.jobOffer.title,
           record.jobOffer.recruiterEmail,
           record.source.originalUrl,
