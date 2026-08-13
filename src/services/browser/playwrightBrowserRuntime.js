@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import { access, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { env } from '../../config/env.js';
+import { captureLinkedInSnapshot } from './linkedinSnapshotExtractor.js';
 
 const MAX_CAPTURE_CHARS = 20_000;
 const BROWSER_RUNTIME = {
@@ -9,18 +10,6 @@ const BROWSER_RUNTIME = {
   BROWSERLESS: 'browserless',
 };
 const BROWSERLESS_NATIVE_PLAYWRIGHT_SUFFIX = '/playwright';
-const HIRING_SIGNAL_PATTERNS = [
-  { token: 'hiring', pattern: /\bhiring\b/u },
-  { token: 'send_your_resume', pattern: /send (your )?(resume|cv)/u },
-  { token: 'enviar_cv', pattern: /enviar (cv|resume|curriculum)/u },
-  { token: 'oportunidad_laboral', pattern: /oportunidad laboral/u },
-  { token: 'estamos_buscando', pattern: /estamos buscando/u },
-  { token: 'busqueda_activa', pattern: /b[uÃº]squeda activa/u },
-  { token: 'escribeme_por_privado', pattern: /escr[iÃ­]beme por privado/u },
-  { token: 'apply_here', pattern: /apply here/u },
-  { token: 'dm_me', pattern: /\b(dm|direct message|message me)\b/u },
-];
-const VISIBLE_EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu;
 
 export function createPlaywrightBrowserRuntime(options = {}) {
   const launcher = options.launcher ?? chromium;
@@ -74,6 +63,7 @@ function createLocalRuntime({ launcher, config, launchOptions, accessFn, mkdirFn
         page,
         stateFilePath,
         runtimeKind: BROWSER_RUNTIME.LOCAL,
+        debugEnabled: config.LOG_LEVEL === 'debug',
         closePolicy: 'close_context_and_browser',
       };
       await persistStorageState(handle, mkdirFn);
@@ -134,6 +124,7 @@ function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn, fetchFn
         browserlessConnectionMode: connectionMode,
         browserlessSessionId: sessionId,
         browserlessWsUrl: browserlessUrl.toString(),
+        debugEnabled: config.LOG_LEVEL === 'debug',
         closePolicy: 'explicit_browser_close_only',
       };
       await persistStorageState(handle, mkdirFn);
@@ -208,76 +199,26 @@ function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn, fetchFn
 }
 
 async function buildSnapshot(handle, page) {
-  const [title, url, visibleText] = await Promise.all([
-    page.title(),
-    Promise.resolve(page.url()),
-    page.evaluate((limit) => {
-      const sourceNode =
-        globalThis.document.querySelector('main') ?? globalThis.document.body;
-      return String(sourceNode?.innerText ?? '')
-        .replace(/\s+/gu, ' ')
-        .trim()
-        .slice(0, limit);
-    }, MAX_CAPTURE_CHARS),
-  ]);
-
-  const snapshot = inspectLinkedInPage({
-    title,
-    url,
-    visibleText,
+  const snapshot = await captureLinkedInSnapshot(page, {
+    maxCaptureChars: MAX_CAPTURE_CHARS,
+    debug:
+      handle?.debugEnabled
+        ? (stage, payload) => {
+            console.info(
+              `[playwright-browser-runtime] ${JSON.stringify({
+                stage,
+                timestamp: new Date().toISOString(),
+                ...payload,
+              })}`,
+            );
+          }
+        : null,
   });
 
   return {
-    title,
-    url,
-    visibleText,
-    capturedAt: new Date().toISOString(),
+    ...snapshot,
     runtimeKind: handle.runtimeKind,
     browserlessConnectionMode: handle.browserlessConnectionMode ?? null,
-    ...snapshot,
-  };
-}
-
-function inspectLinkedInPage({ title, url, visibleText }) {
-  const normalizedText = `${title} ${visibleText}`.toLowerCase();
-  const normalizedUrl = String(url).toLowerCase();
-  const attentionReasons = [];
-
-  const isLinkedIn = normalizedUrl.includes('linkedin.com');
-  const isJobsSection = normalizedUrl.includes('linkedin.com/jobs');
-  const isJobView = /linkedin\.com\/jobs\/view/u.test(normalizedUrl);
-  const isFeedSection = normalizedUrl.includes('linkedin.com/feed');
-  const isPostSearchSection = normalizedUrl.includes('linkedin.com/search/results/content');
-  const isPostDetail =
-    normalizedUrl.includes('linkedin.com/feed/update/') || normalizedUrl.includes('linkedin.com/posts/');
-  const hiringSignals = HIRING_SIGNAL_PATTERNS.filter(({ pattern }) => pattern.test(normalizedText)).map(
-    ({ token }) => token,
-  );
-  const visibleEmails = [...new Set(visibleText.match(VISIBLE_EMAIL_PATTERN)?.map((item) => item.toLowerCase()) ?? [])];
-
-  if (!isLinkedIn) {
-    attentionReasons.push('UNSUPPORTED_DOMAIN');
-  }
-
-  if (/captcha|security verification|checkpoint|two-step|verification required/u.test(normalizedText)) {
-    attentionReasons.push('CAPTCHA_OR_CHALLENGE');
-  }
-
-  if (/sign in|log in/u.test(normalizedText) && normalizedText.includes('linkedin')) {
-    attentionReasons.push('LOGIN_REQUIRED');
-  }
-
-  return {
-    isLinkedIn,
-    isJobsSection,
-    isJobView,
-    isFeedSection,
-    isPostSearchSection,
-    isPostDetail,
-    hiringSignals,
-    visibleEmails,
-    requiresAttention: attentionReasons.length > 0,
-    attentionReasons,
   };
 }
 

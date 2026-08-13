@@ -139,6 +139,44 @@ describe('browserSessionService', () => {
         visibleEmails: [],
         requiresAttention: false,
         attentionReasons: [],
+        extractedJob: {
+          title: 'Backend Developer',
+          company: 'Acme Labs',
+          location: 'Remote',
+          modality: ['remote'],
+          employmentType: 'full-time',
+          seniority: 'junior',
+          technologies: ['Node.js', 'Express', 'MySQL', 'Jest'],
+          frameworks: ['Express'],
+          databases: ['MySQL'],
+          tools: ['Jest'],
+          languages: ['English'],
+          responsibilities: ['Build backend services and APIs.'],
+          requirements: ['Node.js, Express, MySQL and Jest.'],
+          benefits: [],
+          recruiter: 'Jane Recruiter',
+          postedAt: '2026-08-01',
+          applyMode: 'EASY_APPLY',
+          applicantsCount: '34 applicants',
+          salary: null,
+          description:
+            'We are hiring a Backend Developer with Node.js, Express, MySQL and Jest. English B2 is required.',
+          quality: {
+            title: 'HIGH',
+            company: 'HIGH',
+            location: 'HIGH',
+            modality: 'MEDIUM',
+            description: 'HIGH',
+            technologies: 'HIGH',
+          },
+          debugSources: {
+            title: 'selector:h1',
+            company: 'selector:company',
+            location: 'selector:metadata',
+            description: 'selector:description',
+            technologies: 'description+metadata',
+          },
+        },
       })),
       navigate: vi.fn(),
       close: vi.fn(),
@@ -155,10 +193,17 @@ describe('browserSessionService', () => {
 
     expect(result.job.id).toBe('job-captured-1');
     expect(result.session.metadata.lastCapturedJobId).toBe('job-captured-1');
+    expect(result.session.metadata.extractionQuality).toEqual(
+      expect.objectContaining({
+        title: 'HIGH',
+        technologies: 'HIGH',
+      }),
+    );
     expect(jobOfferService.createFromManualInput).toHaveBeenCalledWith(
       expect.objectContaining({
         sourceLabel: 'LinkedIn Jobs supervised session',
         sourceUrl: 'https://www.linkedin.com/jobs/view/12345',
+        rawText: expect.stringContaining('Title: Backend Developer'),
       }),
     );
     expect(auditService.record).toHaveBeenCalledWith(

@@ -5,6 +5,7 @@ import { HttpError } from '../../lib/httpError.js';
 import { retryOperation } from '../../lib/retry.js';
 import { createDesktopAgentBrowserRuntime } from './desktopAgentBrowserRuntime.js';
 import { createPlaywrightBrowserRuntime } from './playwrightBrowserRuntime.js';
+import { buildStructuredCaptureText } from './linkedinSnapshotExtractor.js';
 
 const LINKEDIN_JOBS_START_URL = 'https://www.linkedin.com/jobs/';
 const LINKEDIN_FEED_START_URL = 'https://www.linkedin.com/feed/';
@@ -404,6 +405,27 @@ function updateSessionFromSnapshot(record, snapshot, overrides = {}) {
 }
 
 function buildSessionMetadata(snapshot, baseMetadata = {}) {
+  const extractedJob = snapshot.extractedJob
+    ? {
+        title: snapshot.extractedJob.title,
+        company: snapshot.extractedJob.company,
+        location: snapshot.extractedJob.location,
+        modality: snapshot.extractedJob.modality,
+        employmentType: snapshot.extractedJob.employmentType,
+        seniority: snapshot.extractedJob.seniority,
+        technologies: snapshot.extractedJob.technologies,
+        frameworks: snapshot.extractedJob.frameworks,
+        databases: snapshot.extractedJob.databases,
+        tools: snapshot.extractedJob.tools,
+        languages: snapshot.extractedJob.languages,
+        applyMode: snapshot.extractedJob.applyMode,
+        recruiter: snapshot.extractedJob.recruiter,
+        postedAt: snapshot.extractedJob.postedAt,
+        applicantsCount: snapshot.extractedJob.applicantsCount,
+        salary: snapshot.extractedJob.salary,
+      }
+    : null;
+
   return {
     ...baseMetadata,
     currentUrl: snapshot.url,
@@ -424,6 +446,10 @@ function buildSessionMetadata(snapshot, baseMetadata = {}) {
     visibleEmails: snapshot.visibleEmails,
     requiresAttention: snapshot.requiresAttention,
     attentionReasons: snapshot.attentionReasons,
+    hasStructuredExtraction: Boolean(snapshot.extractedJob),
+    extractionQuality: snapshot.extractedJob?.quality ?? null,
+    extractionDebugSources: snapshot.extractedJob?.debugSources ?? null,
+    extractedJob,
   };
 }
 
@@ -447,22 +473,7 @@ function normalizeLinkedInUrl(value) {
 }
 
 function buildCaptureText(snapshot, providerConfig) {
-  const sections = [
-    `Source: ${providerConfig?.sourceLabel ?? 'LinkedIn supervised session'}`,
-    `Captured URL: ${snapshot.url}`,
-  ];
-
-  if (snapshot.hiringSignals.length) {
-    sections.push(`Visible hiring signals: ${snapshot.hiringSignals.join(', ')}`);
-  }
-
-  if (snapshot.visibleEmails.length) {
-    sections.push(`Visible contact emails: ${snapshot.visibleEmails.join(', ')}`);
-  }
-
-  sections.push(snapshot.visibleText);
-
-  return sections.join('\n');
+  return buildStructuredCaptureText(snapshot, providerConfig?.sourceLabel);
 }
 
 async function executeRuntimeCall(breaker, operation) {
