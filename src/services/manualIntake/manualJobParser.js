@@ -1,28 +1,43 @@
 import { CERTAINTY } from '../../constants/certainty.js';
 import { normalizeUrl } from '../../lib/fingerprint.js';
 
-const technologyDictionary = [
-  'javascript',
-  'typescript',
-  'node.js',
-  'node',
-  'express',
-  'react',
-  'vite',
-  'react router',
-  'mysql',
-  'mongodb',
-  'redis',
-  'docker',
-  'jest',
-  'supertest',
-  'socket.io',
-  'php',
-  'wordpress',
-  'aws',
-  'terraform',
-  'figma',
+const technologyAliases = {
+  'JavaScript': ['javascript', 'js', 'javascript es6+', 'ecmascript', 'es6'],
+  'TypeScript': ['typescript', 'ts'],
+  'Node.js': ['node.js', 'nodejs', 'node js', 'node'],
+  Express: ['express', 'express.js', 'expressjs'],
+  React: ['react', 'react.js', 'reactjs'],
+  Vite: ['vite'],
+  'React Router': ['react router', 'react-router', 'reactrouter'],
+  MySQL: ['mysql', 'my sql'],
+  MongoDB: ['mongodb', 'mongo db', 'mongo'],
+  Redis: ['redis'],
+  Docker: ['docker'],
+  Jest: ['jest'],
+  Supertest: ['supertest', 'super test'],
+  'Socket.io': ['socket.io', 'socket io', 'socketio'],
+  PHP: ['php'],
+  WordPress: ['wordpress', 'word press'],
+  AWS: ['aws', 'amazon web services'],
+  Terraform: ['terraform'],
+  Figma: ['figma'],
+  Git: ['git'],
+  GitHub: ['github', 'git hub'],
+};
+
+const ignoredTitlePatterns = [
+  /^source:/i,
+  /^captured url:/i,
+  /^linkedin jobs$/i,
+  /^linkedin$/i,
+  /^empleos?$/i,
+  /^jobs$/i,
+  /^apply now$/i,
+  /^easy apply$/i,
+  /^hiring$/i,
 ];
+
+const companyFallbackPatterns = [/^(we are|estamos|somos|buscamos|hiring)\b/i];
 
 const modalityPatterns = [
   { value: 'remote', patterns: ['remote', 'remoto'] },
@@ -37,16 +52,11 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType }) 
     .filter(Boolean);
 
   const lowerText = rawText.toLowerCase();
-  const title = extractField(lines, ['puesto', 'role', 'position', 'job title']) || lines[0] || 'Unknown role';
-  const company =
-    extractField(lines, ['empresa', 'company']) ||
-    extractCompanyFromSentence(lines[0]) ||
-    'Unknown company';
+  const title = extractJobTitle(lines);
+  const company = extractCompany(lines, title);
   const location = extractField(lines, ['ubicacion', 'ubicación', 'location']);
   const recruiterEmail = extractEmail(rawText);
-  const technologies = technologyDictionary
-    .filter((term) => lowerText.includes(term))
-    .map(normalizeTechnology);
+  const technologies = extractTechnologies(lowerText);
   const seniority = extractSeniority(lowerText);
   const englishRequirement = extractEnglishRequirement(lowerText);
   const modality = extractModality(lowerText);
@@ -77,13 +87,13 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType }) 
         certaintyFact(
           'title',
           title,
-          title === 'Unknown role' ? CERTAINTY.UNKNOWN : CERTAINTY.INFERRED,
+          title ? CERTAINTY.INFERRED : CERTAINTY.UNKNOWN,
           'manual_text_first_line',
         ),
         certaintyFact(
           'company',
           company,
-          company === 'Unknown company' ? CERTAINTY.UNKNOWN : CERTAINTY.INFERRED,
+          company ? CERTAINTY.INFERRED : CERTAINTY.UNKNOWN,
           'manual_text',
         ),
         certaintyFact(
@@ -154,9 +164,32 @@ function extractField(lines, labels) {
   return null;
 }
 
-function extractCompanyFromSentence(line = '') {
-  const match = line.match(/\bat\s+(.+)$/i);
-  return match ? match[1].trim() : null;
+function extractJobTitle(lines) {
+  const labeledTitle = extractField(lines, ['puesto', 'role', 'position', 'job title', 'title', 'cargo']);
+  if (labeledTitle) {
+    return cleanScalar(labeledTitle);
+  }
+
+  const bestLine = lines.find((line) => isLikelyTitleLine(line));
+  return cleanScalar(bestLine);
+}
+
+function extractCompany(lines, title) {
+  const labeledCompany = extractField(lines, ['empresa', 'company', 'compania', 'compañía']);
+  if (labeledCompany) {
+    return cleanCompany(labeledCompany);
+  }
+
+  const lineWithAt = lines.find((line) => /\bat\s+.+/i.test(line));
+  if (lineWithAt) {
+    const match = lineWithAt.match(/\bat\s+(.+)$/i);
+    const company = cleanCompany(match?.[1]);
+    if (company && company !== title) {
+      return company;
+    }
+  }
+
+  return null;
 }
 
 function extractEmail(text) {
@@ -165,29 +198,15 @@ function extractEmail(text) {
 }
 
 export function normalizeTechnology(term) {
-  const mapping = {
-    javascript: 'JavaScript',
-    typescript: 'TypeScript',
-    'node.js': 'Node.js',
-    node: 'Node.js',
-    react: 'React',
-    express: 'Express',
-    vite: 'Vite',
-    'react router': 'React Router',
-    mysql: 'MySQL',
-    mongodb: 'MongoDB',
-    redis: 'Redis',
-    docker: 'Docker',
-    jest: 'Jest',
-    supertest: 'Supertest',
-    'socket.io': 'Socket.io',
-    php: 'PHP',
-    wordpress: 'WordPress',
-    aws: 'AWS',
-    terraform: 'Terraform',
-    figma: 'Figma',
-  };
-  return mapping[term.toLowerCase()] ?? term;
+  const normalizedKey = normalizeToken(term);
+
+  for (const [canonical, aliases] of Object.entries(technologyAliases)) {
+    if ([canonical, ...aliases].some((item) => normalizeToken(item) === normalizedKey)) {
+      return canonical;
+    }
+  }
+
+  return cleanScalar(term) ?? term;
 }
 
 function extractSeniority(text) {
@@ -270,4 +289,83 @@ function certaintyFact(field, value, certainty, source) {
     certainty,
     source,
   };
+}
+
+function extractTechnologies(text) {
+  const detected = [];
+
+  for (const [canonical, aliases] of Object.entries(technologyAliases)) {
+    const variants = [canonical, ...aliases];
+    if (variants.some((variant) => hasWholeTerm(text, variant))) {
+      detected.push(canonical);
+    }
+  }
+
+  return detected;
+}
+
+function hasWholeTerm(text, value) {
+  const escaped = escapeRegExp(value).replaceAll('\\ ', '\\s+');
+  return new RegExp(`(^|[^a-z0-9+.#-])${escaped}([^a-z0-9+.#-]|$)`, 'i').test(text);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeToken(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/[.\-_/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanScalar(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const cleaned = value.replace(/\s+/g, ' ').trim();
+  return cleaned || null;
+}
+
+function cleanCompany(value) {
+  const cleaned = cleanScalar(value);
+  if (!cleaned) {
+    return null;
+  }
+
+  if (companyFallbackPatterns.some((pattern) => pattern.test(cleaned))) {
+    return null;
+  }
+
+  return cleaned;
+}
+
+function isLikelyTitleLine(line) {
+  const cleaned = cleanScalar(line);
+  if (!cleaned || ignoredTitlePatterns.some((pattern) => pattern.test(cleaned))) {
+    return false;
+  }
+
+  if (/^https?:\/\//i.test(cleaned)) {
+    return false;
+  }
+
+  if (extractEmail(cleaned)) {
+    return false;
+  }
+
+  if (cleaned.length < 6 || cleaned.length > 120) {
+    return false;
+  }
+
+  if (/(send your resume|enviar cv|apply here|postulate|postular|benefits|responsibilities)/i.test(cleaned)) {
+    return false;
+  }
+
+  return /(developer|engineer|frontend|backend|full stack|software|react|node|javascript|typescript|devops|analyst|designer)/i.test(
+    cleaned,
+  );
 }

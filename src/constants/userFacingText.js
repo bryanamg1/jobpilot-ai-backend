@@ -17,7 +17,7 @@ export const userFacingText = {
       'El kill switch de automatizacion esta activo y bloquea las ejecuciones del runner.',
   },
   draft: {
-    blockedWarning: 'draft_blocked: la vacante contiene requisitos prohibidos o no verificados',
+    blockedWarning: 'La vacante contiene requisitos no verificados o sensibles y necesita revision manual antes de preparar un correo.',
     recipientMissing: 'No se ve un correo de contacto en la fuente. No prepares el borrador de Gmail todavia.',
     noResumeSelected:
       'Todavia no se selecciono un CV para esta vacante. Selecciona el CV mas adecuado antes de enviar la postulacion.',
@@ -25,19 +25,21 @@ export const userFacingText = {
       `CV seleccionado: ${label}. Antes de enviar, adjuntalo manualmente en Gmail.`,
     subject: (title) => `Postulacion para ${title} - Bryan Marquez`,
     greetingKnown: 'Hola,',
-    greetingTeam: 'Hola equipo de seleccion,',
+    greetingTeam: 'A quien corresponda,',
     intro: (title, company) =>
-      `Mi nombre es Bryan Marquez y me interesa la oportunidad de ${title} en ${company}.`,
+      company
+        ? `Mi nombre es Bryan Marquez y me interesa la oportunidad de ${title} en ${company}.`
+        : `Mi nombre es Bryan Marquez y me interesa la oportunidad de ${title}.`,
     closing:
       'Quedo a disposicion para continuar la conversacion y compartir la version de CV mas relevante para este rol.',
     farewell: 'Saludos cordiales,',
     remoteFit: 'Tambien me siento comodo trabajando en entornos remotos e hibridos.',
     techAligned: (technologies) =>
-      `Mi stack confirmado incluye ${technologies.join(', ')}, en linea con los requisitos principales visibles en la vacante.`,
+      `Cuento con experiencia trabajando con ${technologies.join(', ')}, tecnologias alineadas con los requisitos visibles de la vacante.`,
     roleAligned:
-      'Mi experiencia confirmada y los proyectos publicados se alinean con el foco tecnico de esta vacante.',
+      'Mi experiencia y los proyectos que publique se alinean con el foco tecnico de esta vacante.',
     projects: (projects) =>
-      `Entre los proyectos mas relevantes para este contexto se encuentran ${projects.join(' y ')}, donde aplique practicas de desarrollo backend y frontend con stacks basados en JavaScript.`,
+      `Entre los proyectos que mejor representan este perfil se encuentran ${projects.join(' y ')}, donde trabaje con soluciones web orientadas a producto y buenas practicas de desarrollo.`,
   },
   guardrails: {
     salary: 'El salario es un dato sensible y requiere aprobacion manual.',

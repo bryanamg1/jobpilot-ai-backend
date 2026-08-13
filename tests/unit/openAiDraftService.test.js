@@ -32,6 +32,22 @@ describe('openAiDraftService', () => {
     expect(draft.approvalsRequired[0]).toContain('salary');
   });
 
+  it('omits unknown companies and keeps the fallback draft natural', () => {
+    const draft = buildFallbackDraft({
+      ...sampleJobAnalysis,
+      jobOffer: {
+        ...sampleJobAnalysis.jobOffer,
+        company: 'Unknown company',
+        recruiterEmail: null,
+      },
+    });
+
+    expect(draft.body).toContain('A quien corresponda,');
+    expect(draft.body).toContain('me interesa la oportunidad de Backend Developer.');
+    expect(draft.body).not.toContain('Unknown company');
+    expect(draft.body).not.toContain('Mi stack confirmado');
+  });
+
   it('uses structured output when the OpenAI client succeeds', async () => {
     const client = {
       responses: {

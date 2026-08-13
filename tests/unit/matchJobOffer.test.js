@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultCandidateProfile } from '../../src/config/candidateProfileSeed.js';
 import { evaluateGuardrails } from '../../src/services/guardrails/guardrailService.js';
 import { matchJobOffer } from '../../src/services/matching/matchJobOffer.js';
-import { parseManualJob } from '../../src/services/manualIntake/manualJobParser.js';
+import { normalizeTechnology, parseManualJob } from '../../src/services/manualIntake/manualJobParser.js';
 
 const fixture = (name) =>
   fs.readFileSync(path.join(import.meta.dirname, '../fixtures', name), 'utf8');
@@ -36,6 +36,36 @@ describe('matchJobOffer', () => {
 
     expect(match.status).toBe('REJECTED_BY_RULES');
     expect(match.excludedByRules.length).toBeGreaterThan(0);
+  });
+
+  it('normalizes equivalent technologies and does not leave unknown company placeholders', () => {
+    const parsed = parseManualJob({
+      rawText: `
+Frontend Developer
+We are hiring for a remote LATAM team.
+Requirements: JS, ReactJS, NodeJS, Express.js, MySql and GitHub.
+Apply here.
+      `.trim(),
+      sourceUrl: 'https://example.com/frontend-job',
+      sourceLabel: 'Manual',
+    });
+    const guardrails = evaluateGuardrails(parsed, defaultCandidateProfile);
+    const match = matchJobOffer(defaultCandidateProfile, parsed, guardrails);
+
+    expect(parsed.jobOffer.company).toBeNull();
+    expect(parsed.jobOffer.technologies).toEqual(
+      expect.arrayContaining(['JavaScript', 'React', 'Node.js', 'Express', 'MySQL']),
+    );
+    expect(match.matchedTechnologies).toEqual(
+      expect.arrayContaining(['JavaScript', 'React', 'Node.js', 'Express', 'MySQL']),
+    );
+  });
+
+  it('normalizes canonical technology labels consistently', () => {
+    expect(normalizeTechnology('JavaScript ES6+')).toBe('JavaScript');
+    expect(normalizeTechnology('NodeJS')).toBe('Node.js');
+    expect(normalizeTechnology('ReactJS')).toBe('React');
+    expect(normalizeTechnology('Express.js')).toBe('Express');
   });
 });
 

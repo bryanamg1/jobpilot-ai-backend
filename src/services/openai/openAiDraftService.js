@@ -97,7 +97,7 @@ export function createOpenAiDraftService(options = {}) {
             warnings: dedupeStrings([...fallback.generation.warnings, ...parsed.warnings]),
           },
         };
-      } catch (error) {
+      } catch {
         return {
           ...fallback,
           generation: {
@@ -106,7 +106,7 @@ export function createOpenAiDraftService(options = {}) {
             model: config.OPENAI_MODEL,
             warnings: [
               ...fallback.generation.warnings,
-              `openai_error:${error?.name ?? 'Error'}:${error?.message ?? 'Error desconocido'}`,
+              'No se pudo personalizar el borrador con IA en este intento. Se muestra una version segura para revisar manualmente.',
             ],
           },
         };
@@ -136,6 +136,7 @@ function createClient(config) {
 
 export function buildFallbackDraft(jobAnalysis) {
   const recipient = jobAnalysis.jobOffer.recruiterEmail || null;
+  const company = sanitizeCompany(jobAnalysis.jobOffer.company);
   const approvals = jobAnalysis.match.approvals.map((item) => `${item.field}: ${item.reason}`);
   const blocked = [...jobAnalysis.match.excludedByRules];
   const factsUsed = collectFacts(jobAnalysis);
@@ -167,7 +168,7 @@ export function buildFallbackDraft(jobAnalysis) {
   const body = [
     recipient ? userFacingText.draft.greetingKnown : userFacingText.draft.greetingTeam,
     '',
-    userFacingText.draft.intro(jobAnalysis.jobOffer.title, jobAnalysis.jobOffer.company),
+    userFacingText.draft.intro(jobAnalysis.jobOffer.title, company),
     buildFitParagraph(jobAnalysis),
     buildProjectParagraph(jobAnalysis),
     userFacingText.draft.closing,
@@ -272,10 +273,11 @@ function collectFacts(jobAnalysis) {
     });
   }
 
-  if (jobAnalysis.jobOffer.company && !/^unknown\b/i.test(jobAnalysis.jobOffer.company)) {
+  const company = sanitizeCompany(jobAnalysis.jobOffer.company);
+  if (company) {
     facts.push({
       field: 'company',
-      value: jobAnalysis.jobOffer.company,
+      value: company,
       certainty: certaintyByField.get('company')?.certainty ?? CERTAINTY.INFERRED,
       source: certaintyByField.get('company')?.source ?? 'job_offer',
     });
@@ -328,4 +330,13 @@ function mergeFacts(baseFacts, nextFacts) {
 
 function dedupeStrings(values) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function sanitizeCompany(value) {
+  const normalized = String(value ?? '').trim();
+  if (!normalized || /^unknown\b/i.test(normalized) || /^empresa desconocida$/i.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
 }

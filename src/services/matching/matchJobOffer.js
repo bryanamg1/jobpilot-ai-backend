@@ -1,14 +1,17 @@
 import { matchingRules } from '../../config/matchingRules.js';
 import { JOB_STATUS } from '../../constants/jobStatus.js';
 import { userFacingText } from '../../constants/userFacingText.js';
+import { normalizeTechnology } from '../manualIntake/manualJobParser.js';
 
 export function matchJobOffer(profile, parsedOffer, guardrails) {
   const confirmedTechnologies = new Set(
-    profile.facts.filter((fact) => fact.key === 'technology').map((fact) => String(fact.value).toLowerCase()),
+    profile.facts
+      .filter((fact) => fact.key === 'technology')
+      .map((fact) => normalizeTechnology(fact.value).toLowerCase()),
   );
-  const offerTechnologies = parsedOffer.jobOffer.technologies;
+  const offerTechnologies = dedupeTechnologies(parsedOffer.jobOffer.technologies);
   const matchedTechnologies = offerTechnologies.filter((tech) =>
-    confirmedTechnologies.has(String(tech).toLowerCase()),
+    confirmedTechnologies.has(normalizeTechnology(tech).toLowerCase()),
   );
   const missingTechnologies = offerTechnologies.filter(
     (tech) => !matchedTechnologies.includes(tech),
@@ -159,4 +162,22 @@ function selectStatus(score, parsedOffer, guardrails, excludedByRules) {
   }
 
   return JOB_STATUS.REJECTED_BY_RULES;
+}
+
+function dedupeTechnologies(values = []) {
+  const ordered = [];
+  const seen = new Set();
+
+  for (const value of values) {
+    const canonical = normalizeTechnology(value);
+    const key = canonical.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    ordered.push(canonical);
+  }
+
+  return ordered;
 }
