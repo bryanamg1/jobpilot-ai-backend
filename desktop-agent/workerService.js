@@ -2,14 +2,24 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 export function createWorkerService(client, sessionStore, options = {}) {
   const pollIntervalMs = options.pollIntervalMs ?? 5_000;
+  const delayFn = options.delayFn ?? delay;
   const agentMeta = options.agentMeta;
+  const maxRateLimitRetries = options.maxRateLimitRetries ?? 2;
+  const logLevel = normalizeLogLevel(options.logLevel);
   let agentId = options.agentId ?? null;
   let activeJobId = null;
   let running = false;
+  const emitWorkerEvent = (stage, payload) => logWorkerEvent(stage, payload, logLevel);
 
   return {
     async register() {
-      const payload = await client.register(agentMeta);
+      const payload = await invokeClientOperation('register', () => client.register(agentMeta), {
+        agentId,
+        delayFn,
+        pollIntervalMs,
+        maxRateLimitRetries,
+        logEvent: emitWorkerEvent,
+      });
       agentId = payload.agentId;
       return payload;
     },
@@ -27,9 +37,15 @@ export function createWorkerService(client, sessionStore, options = {}) {
         throw new Error('Desktop Worker no esta registrado.');
       }
 
-      const job = await client.getNextJob(agentId);
+      const job = await invokeClientOperation('jobs.next', () => client.getNextJob(agentId), {
+        agentId,
+        delayFn,
+        pollIntervalMs,
+        maxRateLimitRetries,
+        logEvent: emitWorkerEvent,
+      });
       if (!job) {
-        logWorkerEvent('job.none', {
+        emitWorkerEvent('job.none', {
           agentId,
           status: 'IDLE',
         });
@@ -38,19 +54,30 @@ export function createWorkerService(client, sessionStore, options = {}) {
 
       const startedAt = Date.now();
       activeJobId = job.id;
-      logWorkerEvent('job.claimed', {
+      emitWorkerEvent('job.claimed', {
         agentId,
         jobId: job.id,
         sessionId: job.payload?.sessionId ?? null,
         jobType: job.jobType,
         status: job.status ?? 'CLAIMED',
       });
-      await client.heartbeat({
-        agentId,
-        status: 'BUSY',
-        activeJobId,
-      });
-      logWorkerEvent('job.started', {
+      await invokeClientOperation(
+        'heartbeat.busy',
+        () =>
+          client.heartbeat({
+            agentId,
+            status: 'BUSY',
+            activeJobId,
+          }),
+        {
+          agentId,
+          delayFn,
+          pollIntervalMs,
+          maxRateLimitRetries,
+          logEvent: emitWorkerEvent,
+        },
+      );
+      emitWorkerEvent('job.started', {
         agentId,
         jobId: job.id,
         sessionId: job.payload?.sessionId ?? null,
@@ -59,12 +86,23 @@ export function createWorkerService(client, sessionStore, options = {}) {
       });
 
       try {
-        const result = await executeBrowserJob(sessionStore, job);
-        await client.reportResult(job.id, {
-          agentId,
-          result,
-        });
-        logWorkerEvent('job.reported', {
+        const result = await executeBrowserJob(sessionStore, job, emitWorkerEvent);
+        await invokeClientOperation(
+          'jobs.result',
+          () =>
+            client.reportResult(job.id, {
+              agentId,
+              result,
+            }),
+          {
+            agentId,
+            delayFn,
+            pollIntervalMs,
+            maxRateLimitRetries,
+            logEvent: emitWorkerEvent,
+          },
+        );
+        emitWorkerEvent('job.reported', {
           agentId,
           jobId: job.id,
           sessionId: job.payload?.sessionId ?? null,
@@ -74,7 +112,7 @@ export function createWorkerService(client, sessionStore, options = {}) {
         });
         return result;
       } catch (error) {
-        logWorkerEvent('job.failed', {
+        emitWorkerEvent('job.failed', {
           agentId,
           jobId: job.id,
           sessionId: job.payload?.sessionId ?? null,
@@ -84,15 +122,28 @@ export function createWorkerService(client, sessionStore, options = {}) {
           errorMessage: error.message,
         });
         try {
-          await client.reportError(job.id, {
-            agentId,
-            error: {
-              message: error.message,
-              code: error.code ?? undefined,
+          await invokeClientOperation(
+            'jobs.error',
+            () =>
+              client.reportError(job.id, {
+                agentId,
+                error: {
+                  message: error.message,
+                  code: error.code ?? undefined,
+                  details:
+                    error?.details && typeof error.details === 'object' ? error.details : undefined,
+                },
+              }),
+            {
+              agentId,
+              delayFn,
+              pollIntervalMs,
+              maxRateLimitRetries,
+              logEvent: emitWorkerEvent,
             },
-          });
+          );
         } catch (reportError) {
-          logWorkerEvent('job.report_error_failed', {
+          emitWorkerEvent('job.report_error_failed', {
             agentId,
             jobId: job.id,
             sessionId: job.payload?.sessionId ?? null,
@@ -105,11 +156,34 @@ export function createWorkerService(client, sessionStore, options = {}) {
         return null;
       } finally {
         activeJobId = null;
-        await client.heartbeat({
-          agentId,
-          status: 'ONLINE',
-        });
-        logWorkerEvent('job.finished', {
+        try {
+          await invokeClientOperation(
+            'heartbeat.online',
+            () =>
+              client.heartbeat({
+                agentId,
+                status: 'ONLINE',
+              }),
+            {
+              agentId,
+              delayFn,
+              pollIntervalMs,
+              maxRateLimitRetries,
+              logEvent: emitWorkerEvent,
+            },
+          );
+        } catch (heartbeatError) {
+            emitWorkerEvent('heartbeat.failed', {
+            agentId,
+            jobId: job.id,
+            sessionId: job.payload?.sessionId ?? null,
+            jobType: job.jobType,
+            status: heartbeatError?.code === 'DESKTOP_AGENT_RATE_LIMITED' ? 'RATE_LIMITED' : 'FAILED',
+            retryAfterMs: resolveRetryDelayMs(heartbeatError, pollIntervalMs),
+            errorMessage: heartbeatError.message,
+          });
+        }
+        emitWorkerEvent('job.finished', {
           agentId,
           jobId: job.id,
           sessionId: job.payload?.sessionId ?? null,
@@ -123,8 +197,30 @@ export function createWorkerService(client, sessionStore, options = {}) {
     async runLoop() {
       running = true;
       while (running) {
-        await this.processNextJob();
-        await delay(pollIntervalMs);
+        let waitMs = pollIntervalMs;
+
+        try {
+          await this.processNextJob();
+        } catch (error) {
+          if (error?.code === 'DESKTOP_AGENT_RATE_LIMITED') {
+            waitMs = resolveRetryDelayMs(error, pollIntervalMs);
+            emitWorkerEvent('loop.rate_limited', {
+              agentId,
+              status: 'RATE_LIMITED',
+              requestLabel: error.requestLabel ?? null,
+              retryAfterMs: waitMs,
+              errorMessage: error.message,
+            });
+          } else {
+            emitWorkerEvent('loop.failed', {
+              agentId,
+              status: 'FAILED',
+              errorMessage: error?.message ?? 'Error desconocido',
+            });
+          }
+        }
+
+        await delayFn(waitMs);
       }
     },
 
@@ -134,17 +230,17 @@ export function createWorkerService(client, sessionStore, options = {}) {
   };
 }
 
-async function executeBrowserJob(sessionStore, job) {
+async function executeBrowserJob(sessionStore, job, logEvent) {
   switch (job.jobType) {
     case 'START_SESSION': {
-      logWorkerEvent('job.start_session.begin', {
+      logEvent('job.start_session.begin', {
         jobId: job.id,
         sessionId: job.payload?.sessionId ?? null,
         jobType: job.jobType,
         status: 'RUNNING',
       });
       const result = await sessionStore.startSession(job.payload);
-      logWorkerEvent('job.start_session.completed', {
+      logEvent('job.start_session.completed', {
         jobId: job.id,
         sessionId: job.payload?.sessionId ?? null,
         jobType: job.jobType,
@@ -156,14 +252,14 @@ async function executeBrowserJob(sessionStore, job) {
       };
     }
     case 'NAVIGATE': {
-      logWorkerEvent('job.navigate.begin', {
+      logEvent('job.navigate.begin', {
         jobId: job.id,
         sessionId: job.payload?.sessionId ?? null,
         jobType: job.jobType,
         status: 'RUNNING',
       });
       const snapshot = await sessionStore.navigate(job.payload.sessionId, job.payload.url);
-      logWorkerEvent('job.navigate.completed', {
+      logEvent('job.navigate.completed', {
         jobId: job.id,
         sessionId: job.payload?.sessionId ?? null,
         jobType: job.jobType,
@@ -174,14 +270,16 @@ async function executeBrowserJob(sessionStore, job) {
       };
     }
     case 'GET_SNAPSHOT': {
-      logWorkerEvent('job.get_snapshot.begin', {
+      logEvent('job.get_snapshot.begin', {
         jobId: job.id,
         sessionId: job.payload?.sessionId ?? null,
         jobType: job.jobType,
         status: 'RUNNING',
       });
-      const snapshot = await sessionStore.getSnapshot(job.payload.sessionId);
-      logWorkerEvent('job.get_snapshot.completed', {
+      const snapshot = await sessionStore.getSnapshot(job.payload.sessionId, {
+        captureMode: job.payload?.captureMode ?? 'passive',
+      });
+      logEvent('job.get_snapshot.completed', {
         jobId: job.id,
         sessionId: job.payload?.sessionId ?? null,
         jobType: job.jobType,
@@ -192,7 +290,7 @@ async function executeBrowserJob(sessionStore, job) {
       };
     }
     case 'CLOSE_SESSION':
-      logWorkerEvent('job.close_session.begin', {
+      logEvent('job.close_session.begin', {
         jobId: job.id,
         sessionId: job.payload?.sessionId ?? null,
         jobType: job.jobType,
@@ -205,12 +303,99 @@ async function executeBrowserJob(sessionStore, job) {
   }
 }
 
-function logWorkerEvent(stage, payload) {
-  console.info(
+function logWorkerEvent(stage, payload, currentLogLevel = 'info') {
+  const level = resolveWorkerLogLevel(stage);
+  if (!shouldLog(level, currentLogLevel)) {
+    return;
+  }
+  const writer = typeof console[level] === 'function' ? console[level].bind(console) : console.info.bind(console);
+  writer(
     `[desktop-worker] ${JSON.stringify({
       stage,
       timestamp: new Date().toISOString(),
       ...payload,
     })}`,
   );
+}
+
+function resolveWorkerLogLevel(stage) {
+  if (stage === 'job.none') {
+    return 'debug';
+  }
+
+  if (stage === 'client.rate_limited' || stage === 'loop.rate_limited' || stage === 'heartbeat.failed') {
+    return 'warn';
+  }
+
+  if (stage === 'job.failed' || stage === 'job.report_error_failed' || stage === 'loop.failed') {
+    return 'error';
+  }
+
+  if (
+    stage === 'job.claimed' ||
+    stage === 'job.get_snapshot.begin' ||
+    stage === 'job.reported' ||
+    stage === 'job.navigate.begin' ||
+    stage === 'job.start_session.begin'
+  ) {
+    return 'info';
+  }
+
+  return 'debug';
+}
+
+async function invokeClientOperation(operation, action, options) {
+  const agentId = options.agentId ?? null;
+  const delayFn = options.delayFn;
+  const maxRateLimitRetries = options.maxRateLimitRetries ?? 0;
+  const fallbackDelayMs = options.pollIntervalMs ?? 1_000;
+  const logEvent = options.logEvent ?? ((stage, payload) => logWorkerEvent(stage, payload));
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await action();
+    } catch (error) {
+      if (error?.code !== 'DESKTOP_AGENT_RATE_LIMITED' || attempt >= maxRateLimitRetries) {
+        throw error;
+      }
+
+      const retryAfterMs = resolveRetryDelayMs(error, fallbackDelayMs);
+      logEvent('client.rate_limited', {
+        agentId,
+        operation,
+        attempt: attempt + 1,
+        requestLabel: error.requestLabel ?? null,
+        retryAfterMs,
+      });
+      await delayFn(retryAfterMs);
+      attempt += 1;
+    }
+  }
+}
+
+function resolveRetryDelayMs(error, fallbackDelayMs) {
+  const retryAfterMs = Number(error?.retryAfterMs ?? NaN);
+  if (Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
+    return retryAfterMs;
+  }
+
+  return Math.max(250, fallbackDelayMs);
+}
+
+function normalizeLogLevel(value) {
+  return ['debug', 'info', 'warn', 'error'].includes(String(value).toLowerCase())
+    ? String(value).toLowerCase()
+    : 'info';
+}
+
+function shouldLog(level, currentLogLevel) {
+  const weights = {
+    debug: 10,
+    info: 20,
+    warn: 30,
+    error: 40,
+  };
+
+  return (weights[level] ?? weights.info) >= (weights[currentLogLevel] ?? weights.info);
 }

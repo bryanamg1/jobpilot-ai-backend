@@ -2,14 +2,41 @@ import { describe, expect, it, vi } from 'vitest';
 import { env } from '../../src/config/env.js';
 import { createPlaywrightBrowserRuntime } from '../../src/services/browser/playwrightBrowserRuntime.js';
 
-function createLauncherMock() {
-  const page = {
+const PRIMARY_SELECTOR = '[class*="jobs-search__job-details"] .jobs-box__html-content';
+
+function createPageMock(url = 'https://www.linkedin.com/jobs/view/12345') {
+  const descriptionText =
+    'We are hiring a Backend Developer with Node.js, Express, MySQL and Jest. English B2 is required.';
+  const locators = new Map();
+  const getLocator = (selector) => {
+    if (locators.has(selector)) {
+      return locators.get(selector);
+    }
+
+    const locator = {
+      first: vi.fn(function first() {
+        return locator;
+      }),
+      count: vi.fn(async () => (selector === PRIMARY_SELECTOR ? 1 : 0)),
+      isVisible: vi.fn(async () => selector === PRIMARY_SELECTOR),
+      waitFor: vi.fn(async () => ({})),
+      evaluate: vi.fn(async () => descriptionText.length),
+    };
+    locators.set(selector, locator);
+    return locator;
+  };
+
+  return {
     goto: vi.fn(async () => ({})),
     title: vi.fn(async () => 'LinkedIn Jobs'),
-    url: vi.fn(() => 'https://www.linkedin.com/jobs/view/12345'),
+    url: vi.fn(() => url),
+    isClosed: vi.fn(() => false),
+    on: vi.fn(),
+    locator: vi.fn((selector) => getLocator(selector)),
+    waitForFunction: vi.fn(async () => ({})),
     evaluate: vi.fn(async () => ({
       title: 'Backend Developer | LinkedIn',
-      url: 'https://www.linkedin.com/jobs/view/12345',
+      url,
       visibleText:
         'Backend Developer Acme Labs Remote LATAM Node.js Express MySQL Jest English B2 This description is intentionally long enough to satisfy the supervised capture threshold and mimic a visible LinkedIn Jobs detail page.',
       selectors: {
@@ -17,8 +44,7 @@ function createLauncherMock() {
         titleCandidates: ['Backend Developer'],
         companyCandidates: ['Acme Labs'],
         metadataItems: ['Remote', 'LATAM', 'Full-time', 'Junior', '34 applicants'],
-        description:
-          'We are hiring a Backend Developer with Node.js, Express, MySQL and Jest. English B2 is required.',
+        description: descriptionText,
         descriptionBlocks: [
           'Requirements: Node.js, Express, MySQL, Jest.',
           'Responsibilities: Build backend services and APIs.',
@@ -33,13 +59,22 @@ function createLauncherMock() {
         location: 'Remote',
         employmentType: 'FULL_TIME',
         datePosted: '2026-08-01',
-        description:
-          'We are hiring a Backend Developer with Node.js, Express, MySQL and Jest. English B2 is required.',
+        description: descriptionText,
       },
     })),
   };
+}
+
+function createLauncherMock() {
+  const page = createPageMock();
+  let pages = [page];
+  const contextEvents = new Map();
   const context = {
     newPage: vi.fn(async () => page),
+    pages: vi.fn(() => pages),
+    on: vi.fn((event, handler) => {
+      contextEvents.set(event, handler);
+    }),
     storageState: vi.fn(async () => ({})),
     close: vi.fn(async () => ({})),
   };
@@ -59,6 +94,13 @@ function createLauncherMock() {
     browser,
     context,
     page,
+    setPages(nextPages) {
+      pages = nextPages;
+    },
+    emitNewPage(nextPage) {
+      pages = [...pages, nextPage];
+      contextEvents.get('page')?.(nextPage);
+    },
   };
 }
 
@@ -479,5 +521,34 @@ describe('playwrightBrowserRuntime', () => {
 
     expect(context.close).not.toHaveBeenCalled();
     expect(browser.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('captura usando la pestaña nueva rastreada en el contexto local', async () => {
+    const { launcher, emitNewPage, page } = createLauncherMock();
+    const runtime = createPlaywrightBrowserRuntime({
+      launcher,
+      config: {
+        PLAYWRIGHT_HEADLESS: true,
+        BROWSER_SESSION_STATE_DIR: 'storage/browser-sessions',
+      },
+      accessFn: vi.fn(async () => {
+        throw new Error('missing');
+      }),
+      mkdirFn: vi.fn(async () => ({})),
+    });
+
+    const result = await runtime.startSession({
+      sessionId: 'session-local-tabs-1',
+      provider: 'LINKEDIN_JOBS',
+      startUrl: 'https://www.linkedin.com/jobs/',
+    });
+    const jobPage = createPageMock('https://www.linkedin.com/jobs/view/54321');
+    emitNewPage(jobPage);
+
+    const snapshot = await runtime.captureSnapshot(result.handle);
+
+    expect(jobPage.evaluate).toHaveBeenCalled();
+    expect(page.evaluate).toHaveBeenCalledTimes(1);
+    expect(snapshot.url).toBe('https://www.linkedin.com/jobs/view/54321');
   });
 });

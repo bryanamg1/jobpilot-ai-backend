@@ -62,6 +62,22 @@ export function createDesktopAgentBrowserRuntime(repository, options = {}) {
       };
     },
 
+    async captureSnapshot(handle) {
+      const result = await dispatchBrowserJob(repository, {
+        sessionId: handle.sessionId,
+        jobType: 'GET_SNAPSHOT',
+        payload: { sessionId: handle.sessionId, captureMode: 'job_capture' },
+        pollIntervalMs,
+        claimTimeoutMs,
+        timeoutMs,
+      });
+
+      return {
+        ...result.snapshot,
+        runtimeKind: 'desktop_agent',
+      };
+    },
+
     async close(handle) {
       await dispatchBrowserJob(repository, {
         sessionId: handle.sessionId,
@@ -134,7 +150,7 @@ async function dispatchBrowserJob(
       if (current.status === 'FAILED') {
         const error = new Error(current.error?.message ?? 'El Desktop Worker devolvio un error.');
         error.code = current.error?.code ?? 'DESKTOP_AGENT_JOB_FAILED';
-        error.details = current.error ?? null;
+        error.details = current.error?.details ?? current.error ?? null;
         logBrowserJobEvent('dispatch.failed', {
           jobId: job.id,
           sessionId,

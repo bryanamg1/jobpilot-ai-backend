@@ -45,23 +45,25 @@ const modalityPatterns = [
   { value: 'onsite', patterns: ['onsite', 'presencial', 'on site'] },
 ];
 
-export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType }) {
+export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType, structuredJob }) {
   const lines = rawText
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
 
+  const structuredHints = normalizeStructuredJobHints(structuredJob);
+  const titleCandidateLines = selectTitleCandidateLines(lines);
   const lowerText = rawText.toLowerCase();
-  const title = extractJobTitle(lines);
-  const company = extractCompany(lines, title);
-  const location = extractField(lines, ['ubicacion', 'ubicación', 'location']);
+  const title = structuredHints.title ?? extractJobTitle(titleCandidateLines);
+  const company = structuredHints.company ?? extractCompany(titleCandidateLines, title);
+  const location = structuredHints.location ?? extractField(lines, ['ubicacion', 'ubicación', 'location']);
   const recruiterEmail = extractEmail(rawText);
-  const technologies = extractTechnologies(lowerText);
-  const seniority = extractSeniority(lowerText);
+  const technologies = mergeStringArrays(structuredHints.technologies, extractTechnologies(lowerText));
+  const seniority = chooseKnownValue(structuredHints.seniority, extractSeniority(lowerText));
   const englishRequirement = extractEnglishRequirement(lowerText);
-  const modality = extractModality(lowerText);
+  const modality = mergeStringArrays(structuredHints.modality, extractModality(lowerText));
   const salary = extractSalary(rawText);
-  const requirements = extractRequirements(lines);
+  const requirements = mergeStringArrays(structuredHints.requirements, extractRequirements(lines)).slice(0, 12);
   const flags = extractFlags(lowerText);
 
   return {
@@ -87,32 +89,42 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType }) 
         certaintyFact(
           'title',
           title,
-          title ? CERTAINTY.INFERRED : CERTAINTY.UNKNOWN,
-          'manual_text_first_line',
+          title ? (structuredHints.title ? CERTAINTY.CONFIRMED : CERTAINTY.INFERRED) : CERTAINTY.UNKNOWN,
+          structuredHints.title ? 'supervised_structured_capture' : 'manual_text_first_line',
         ),
         certaintyFact(
           'company',
           company,
-          company ? CERTAINTY.INFERRED : CERTAINTY.UNKNOWN,
-          'manual_text',
+          company ? (structuredHints.company ? CERTAINTY.CONFIRMED : CERTAINTY.INFERRED) : CERTAINTY.UNKNOWN,
+          structuredHints.company ? 'supervised_structured_capture' : 'manual_text',
         ),
         certaintyFact(
           'location',
           location,
-          location ? CERTAINTY.INFERRED : CERTAINTY.UNKNOWN,
-          'manual_text',
+          location ? (structuredHints.location ? CERTAINTY.CONFIRMED : CERTAINTY.INFERRED) : CERTAINTY.UNKNOWN,
+          structuredHints.location ? 'supervised_structured_capture' : 'manual_text',
         ),
         certaintyFact(
           'modality',
           modality.join(', '),
-          modality.length ? CERTAINTY.INFERRED : CERTAINTY.UNKNOWN,
-          'manual_text_keyword',
+          modality.length
+            ? structuredHints.modality.length
+              ? CERTAINTY.CONFIRMED
+              : CERTAINTY.INFERRED
+            : CERTAINTY.UNKNOWN,
+          structuredHints.modality.length ? 'supervised_structured_capture' : 'manual_text_keyword',
         ),
         certaintyFact(
           'seniority',
           seniority,
-          seniority === 'unknown' ? CERTAINTY.UNKNOWN : CERTAINTY.INFERRED,
-          'manual_text_keyword',
+          seniority === 'unknown'
+            ? CERTAINTY.UNKNOWN
+            : structuredHints.seniority && structuredHints.seniority !== 'unknown'
+              ? CERTAINTY.CONFIRMED
+              : CERTAINTY.INFERRED,
+          structuredHints.seniority && structuredHints.seniority !== 'unknown'
+            ? 'supervised_structured_capture'
+            : 'manual_text_keyword',
         ),
         certaintyFact(
           'englishRequirement',
@@ -162,6 +174,11 @@ function extractField(lines, labels) {
     }
   }
   return null;
+}
+
+function selectTitleCandidateLines(lines) {
+  const firstSectionIndex = lines.findIndex((line) => /^(description|responsibilities|requirements|benefits)\s*:/i.test(line));
+  return firstSectionIndex > 0 ? lines.slice(0, firstSectionIndex) : lines;
 }
 
 function extractJobTitle(lines) {
@@ -313,12 +330,62 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function normalizeStructuredJobHints(structuredJob) {
+  if (!structuredJob || typeof structuredJob !== 'object') {
+    return {
+      title: null,
+      company: null,
+      location: null,
+      modality: [],
+      seniority: null,
+      technologies: [],
+      requirements: [],
+    };
+  }
+
+  return {
+    title: cleanScalar(structuredJob.title),
+    company: cleanCompany(structuredJob.company),
+    location: cleanScalar(structuredJob.location),
+    modality: cleanStringArray(structuredJob.modality),
+    seniority: cleanScalar(structuredJob.seniority),
+    technologies: cleanStringArray(structuredJob.technologies).map(normalizeTechnology),
+    requirements: cleanStringArray(structuredJob.requirements),
+  };
+}
+
+function cleanStringArray(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return [...new Set(values.map(cleanScalar).filter(Boolean))];
+}
+
 function normalizeToken(value) {
   return String(value)
     .toLowerCase()
     .replace(/[.\-_/]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function chooseKnownValue(currentValue, nextValue) {
+  if (currentValue && currentValue !== 'unknown') {
+    return currentValue;
+  }
+
+  return nextValue && nextValue !== 'unknown' ? nextValue : currentValue;
+}
+
+function mergeStringArrays(baseValues = [], nextValues = []) {
+  return [
+    ...new Set(
+      [...baseValues, ...nextValues]
+        .map((entry) => String(entry).trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function cleanScalar(value) {

@@ -10,6 +10,7 @@ const BROWSER_RUNTIME = {
   BROWSERLESS: 'browserless',
 };
 const BROWSERLESS_NATIVE_PLAYWRIGHT_SUFFIX = '/playwright';
+let runtimeDebugSequence = 0;
 
 export function createPlaywrightBrowserRuntime(options = {}) {
   const launcher = options.launcher ?? chromium;
@@ -40,7 +41,7 @@ export function createPlaywrightBrowserRuntime(options = {}) {
 
 function createLocalRuntime({ launcher, config, launchOptions, accessFn, mkdirFn }) {
   return {
-    async startSession({ provider, startUrl }) {
+    async startSession({ sessionId, provider, startUrl }) {
       const stateFilePath = resolveStateFilePath(
         config.BROWSER_SESSION_STATE_DIR ?? env.BROWSER_SESSION_STATE_DIR,
         provider,
@@ -61,29 +62,48 @@ function createLocalRuntime({ launcher, config, launchOptions, accessFn, mkdirFn
         browser,
         context,
         page,
+        sessionId: sessionId ?? null,
+        provider,
         stateFilePath,
         runtimeKind: BROWSER_RUNTIME.LOCAL,
         debugEnabled: config.LOG_LEVEL === 'debug',
         closePolicy: 'close_context_and_browser',
+        browserDebugId: createRuntimeDebugId('browser'),
+        contextDebugId: createRuntimeDebugId('context'),
       };
+      attachTrackedPageListeners(handle);
       await persistStorageState(handle, mkdirFn);
+      logPlaywrightRuntimeEvent('info', 'browser.connected', {
+        sessionId: handle.sessionId,
+        browserId: handle.browserDebugId,
+        contextId: handle.contextDebugId,
+        runtimeKind: handle.runtimeKind,
+        provider,
+        currentUrl: page.url(),
+      });
 
       return {
         handle,
-        snapshot: await buildSnapshot(handle, page),
+        snapshot: await buildSnapshot(handle),
         reusedStoredSession: Boolean(existingStatePath),
       };
     },
 
     async navigate(handle, url) {
-      await handle.page.goto(url, { waitUntil: 'domcontentloaded' });
+      const page = resolveTrackedPage(handle, 'browser.page.navigate');
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
       await persistStorageState(handle, mkdirFn);
-      return buildSnapshot(handle, handle.page);
+      return buildSnapshot(handle);
     },
 
     async getSnapshot(handle) {
       await persistStorageState(handle, mkdirFn);
-      return buildSnapshot(handle, handle.page);
+      return buildSnapshot(handle);
+    },
+
+    async captureSnapshot(handle) {
+      await persistStorageState(handle, mkdirFn);
+      return buildSnapshot(handle, { captureMode: 'job_capture' });
     },
 
     async close(handle) {
@@ -119,6 +139,8 @@ function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn, fetchFn
         browser,
         context,
         page,
+        sessionId,
+        provider,
         stateFilePath,
         runtimeKind: BROWSER_RUNTIME.BROWSERLESS,
         browserlessConnectionMode: connectionMode,
@@ -126,25 +148,42 @@ function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn, fetchFn
         browserlessWsUrl: browserlessUrl.toString(),
         debugEnabled: config.LOG_LEVEL === 'debug',
         closePolicy: 'explicit_browser_close_only',
+        browserDebugId: createRuntimeDebugId('browser'),
+        contextDebugId: createRuntimeDebugId('context'),
       };
+      attachTrackedPageListeners(handle);
       await persistStorageState(handle, mkdirFn);
+      logPlaywrightRuntimeEvent('info', 'browser.connected', {
+        sessionId: handle.sessionId,
+        browserId: handle.browserDebugId,
+        contextId: handle.contextDebugId,
+        runtimeKind: handle.runtimeKind,
+        provider,
+        currentUrl: page.url(),
+      });
 
       return {
         handle,
-        snapshot: await buildSnapshot(handle, page),
+        snapshot: await buildSnapshot(handle),
         reusedStoredSession: Boolean(existingStatePath || config.BROWSERLESS_PROFILE_NAME),
       };
     },
 
     async navigate(handle, url) {
-      await handle.page.goto(url, { waitUntil: 'domcontentloaded' });
+      const page = resolveTrackedPage(handle, 'browser.page.navigate');
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
       await persistStorageState(handle, mkdirFn);
-      return buildSnapshot(handle, handle.page);
+      return buildSnapshot(handle);
     },
 
     async getSnapshot(handle) {
       await persistStorageState(handle, mkdirFn);
-      return buildSnapshot(handle, handle.page);
+      return buildSnapshot(handle);
+    },
+
+    async captureSnapshot(handle) {
+      await persistStorageState(handle, mkdirFn);
+      return buildSnapshot(handle, { captureMode: 'job_capture' });
     },
 
     async close(handle) {
@@ -198,21 +237,22 @@ function createBrowserlessRuntime({ launcher, config, accessFn, mkdirFn, fetchFn
   };
 }
 
-async function buildSnapshot(handle, page) {
+async function buildSnapshot(handle, options = {}) {
+  const page = resolveTrackedPage(
+    handle,
+    options.captureMode === 'job_capture' ? 'browser.page.capture' : 'browser.page.snapshot',
+  );
   const snapshot = await captureLinkedInSnapshot(page, {
     maxCaptureChars: MAX_CAPTURE_CHARS,
+    provider: handle?.provider ?? null,
+    captureMode: options.captureMode ?? 'passive',
     debug:
       handle?.debugEnabled
         ? (stage, payload) => {
-            console.info(
-              `[playwright-browser-runtime] ${JSON.stringify({
-                stage,
-                timestamp: new Date().toISOString(),
-                ...payload,
-              })}`,
-            );
+            logPlaywrightRuntimeEvent('debug', stage, payload);
           }
         : null,
+    logger: (level, stage, payload) => logPlaywrightRuntimeEvent(level, stage, payload),
   });
 
   return {
@@ -220,6 +260,92 @@ async function buildSnapshot(handle, page) {
     runtimeKind: handle.runtimeKind,
     browserlessConnectionMode: handle.browserlessConnectionMode ?? null,
   };
+}
+
+function attachTrackedPageListeners(handle) {
+  if (typeof handle.context?.on === 'function') {
+    handle.context.on('page', (page) => {
+      handle.page = page;
+      attachPageCloseListener(handle, page);
+      logTrackedPageState('debug', 'browser.page.tracked', handle, page);
+    });
+  }
+
+  attachPageCloseListener(handle, handle.page);
+}
+
+function attachPageCloseListener(handle, page) {
+  if (!page || typeof page.on !== 'function') {
+    return;
+  }
+
+  page.on('close', () => {
+    const fallbackPage = resolveTrackedPage(handle, 'browser.page.closed', { preferExistingHandlePage: false });
+    logTrackedPageState('debug', 'browser.page.fallback_selected', handle, fallbackPage);
+  });
+}
+
+function resolveTrackedPage(handle, stage, options = {}) {
+  const pages = Array.isArray(handle.context?.pages?.()) ? handle.context.pages() : [];
+  const preferExistingHandlePage = options.preferExistingHandlePage ?? true;
+  let selectedPage =
+    preferExistingHandlePage && handle.page && !isClosedPage(handle.page) && pages.includes(handle.page)
+      ? handle.page
+      : [...pages].reverse().find((page) => !isClosedPage(page)) ?? null;
+
+  if (!selectedPage && handle.page && !isClosedPage(handle.page)) {
+    selectedPage = handle.page;
+  }
+
+  if (selectedPage) {
+    handle.page = selectedPage;
+  }
+
+  logTrackedPageState('debug', stage, handle, selectedPage, pages);
+  return selectedPage ?? handle.page;
+}
+
+function logTrackedPageState(level, stage, handle, selectedPage, pagesInput = null) {
+  const pages = Array.isArray(pagesInput) ? pagesInput : Array.isArray(handle.context?.pages?.()) ? handle.context.pages() : [];
+  const openPages = pages.map((page, index) => ({
+    index,
+    url: readPageUrl(page),
+    isClosed: isClosedPage(page),
+  }));
+  const selectedPageIndex = selectedPage ? pages.indexOf(selectedPage) : -1;
+
+  logPlaywrightRuntimeEvent(level, stage, {
+    sessionId: handle.sessionId ?? null,
+    browserId: handle.browserDebugId ?? null,
+    contextId: handle.contextDebugId ?? null,
+    runtimeKind: handle.runtimeKind ?? null,
+    openPageCount: pages.length,
+    openPages,
+    selectedPageIndex,
+    selectedPageClosed: selectedPage ? isClosedPage(selectedPage) : null,
+    selectedPageUrl: selectedPage ? readPageUrl(selectedPage) : null,
+  });
+}
+
+function isClosedPage(page) {
+  try {
+    return Boolean(page?.isClosed?.());
+  } catch {
+    return true;
+  }
+}
+
+function readPageUrl(page) {
+  try {
+    return String(page?.url?.() ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function createRuntimeDebugId(prefix) {
+  runtimeDebugSequence += 1;
+  return `${prefix}-${runtimeDebugSequence}`;
 }
 
 function resolveStateFilePath(baseDir, provider) {
@@ -258,11 +384,19 @@ async function closeLocalHandle(handle, mkdirFn) {
   await persistStorageState(handle, mkdirFn);
   await handle.context.close();
   await handle.browser.close();
+  logPlaywrightRuntimeEvent('info', 'browser.disconnected', {
+    runtimeKind: handle.runtimeKind ?? BROWSER_RUNTIME.LOCAL,
+    provider: handle.provider ?? null,
+  });
 }
 
 async function closeBrowserlessHandle(handle, mkdirFn) {
   await persistStorageState(handle, mkdirFn);
   await handle.browser.close();
+  logPlaywrightRuntimeEvent('info', 'browser.disconnected', {
+    runtimeKind: handle.runtimeKind ?? BROWSER_RUNTIME.BROWSERLESS,
+    provider: handle.provider ?? null,
+  });
 }
 
 function buildBrowserlessWebSocketUrl(config, sessionId) {
@@ -395,4 +529,15 @@ function buildBrowserlessRemoteControlError(message, suggestion) {
   error.code = 'BROWSERLESS_REMOTE_CONTROL_ERROR';
   error.suggestion = suggestion;
   return error;
+}
+
+function logPlaywrightRuntimeEvent(level, stage, payload) {
+  const writer = typeof console[level] === 'function' ? console[level].bind(console) : console.info.bind(console);
+  writer(
+    `[playwright-browser-runtime] ${JSON.stringify({
+      stage,
+      timestamp: new Date().toISOString(),
+      ...payload,
+    })}`,
+  );
 }

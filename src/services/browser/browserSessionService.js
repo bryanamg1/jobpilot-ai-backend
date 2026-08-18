@@ -258,12 +258,76 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
     },
 
     async captureCurrentJob(sessionId) {
+      const captureStartedAt = Date.now();
       const { record, handle } = await getManagedSession(repository, activeSessions, sessionId);
-      const snapshot = await executeRuntimeCall(
-        breaker,
-        () => retryOperation(() => runtime.getSnapshot(handle), runtimeRetryOptions),
-      );
+      logBrowserSessionEvent('capture.started', {
+        sessionId,
+        provider: record.provider,
+        runtimeKind: record.metadata?.runtimeKind ?? 'local',
+      });
+
+      let snapshot;
+      try {
+        snapshot = await executeRuntimeCall(
+          breaker,
+          () =>
+            retryOperation(
+              () =>
+                typeof runtime.captureSnapshot === 'function'
+                  ? runtime.captureSnapshot(handle)
+                  : runtime.getSnapshot(handle),
+              runtimeRetryOptions,
+            ),
+        );
+      } catch (error) {
+        const captureError = describeLinkedInCaptureError(error, record.provider);
+        logBrowserSessionEvent('capture.failed', {
+          sessionId,
+          provider: record.provider,
+          runtimeKind: record.metadata?.runtimeKind ?? 'local',
+          errorCode: captureError?.code ?? error?.code ?? 'UNKNOWN',
+          errorMessage: captureError?.message ?? error?.message ?? 'Error desconocido',
+        });
+
+        if (captureError) {
+          throw new HttpError(409, captureError.message, captureError.details);
+        }
+
+        throw error;
+      }
+      logBrowserSessionEvent('capture.snapshot.completed', {
+        sessionId,
+        provider: record.provider,
+        runtimeKind: record.metadata?.runtimeKind ?? 'local',
+        currentUrl: snapshot.url,
+        title: snapshot.extractedJob?.title ?? null,
+        company: snapshot.extractedJob?.company ?? null,
+        titleLength: String(snapshot.extractedJob?.title ?? '').trim().length,
+        visibleTextLength: snapshot.visibleText?.length ?? 0,
+        extractedDescriptionLength: String(snapshot.extractedJob?.description ?? '').trim().length,
+        headerStrategy: snapshot.extractedJob?.debugSources?.title ?? null,
+        extractionQuality: snapshot.extractedJob?.quality ?? null,
+        descriptionSelection: snapshot.extractedJob?.debugSources?.descriptionSelection ?? null,
+        descriptionPreview:
+          config.isProduction || !snapshot.extractedJob?.description
+            ? null
+            : sanitizePreview(snapshot.extractedJob.description, 80),
+        durationMs: Date.now() - captureStartedAt,
+      });
       const providerConfig = PROVIDER_CONFIG[record.provider];
+
+      const captureValidationError = validateStructuredCaptureSnapshot(record.provider, snapshot);
+      if (captureValidationError) {
+        logBrowserSessionEvent('capture.validation.failed', {
+          sessionId,
+          provider: record.provider,
+          currentUrl: snapshot.url,
+          errorCode: captureValidationError.details?.code ?? 'CAPTURE_VALIDATION_FAILED',
+          errorMessage: captureValidationError.message,
+          details: captureValidationError.details ?? null,
+        });
+        throw captureValidationError;
+      }
 
       if (snapshot.requiresAttention) {
         throw new HttpError(409, 'Browser session requires human attention before capturing the job', {
@@ -278,8 +342,21 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
         });
       }
 
-      if (snapshot.visibleText.length < (providerConfig?.minimumVisibleTextLength ?? 120)) {
+      if (
+        record.provider !== BROWSER_SESSION_PROVIDER.LINKEDIN_JOBS &&
+        snapshot.visibleText.length < (providerConfig?.minimumVisibleTextLength ?? 120)
+      ) {
         throw new HttpError(409, 'The visible job content is too short to capture safely', {
+          currentUrl: snapshot.url,
+          length: snapshot.visibleText.length,
+        });
+      }
+
+      if (
+        record.provider === BROWSER_SESSION_PROVIDER.LINKEDIN_JOBS &&
+        !String(snapshot.extractedJob?.description ?? '').trim()
+      ) {
+        throw new HttpError(409, 'La oferta aún no terminó de cargar o no contiene una descripción visible.', {
           currentUrl: snapshot.url,
           length: snapshot.visibleText.length,
         });
@@ -296,11 +373,47 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
         });
       }
 
-      const job = await jobOfferService.createFromManualInput({
-        rawText: buildCaptureText(snapshot, providerConfig),
-        sourceUrl: snapshot.url,
-        sourceLabel: providerConfig?.sourceLabel ?? 'LinkedIn supervised session',
+      const intakeStartedAt = Date.now();
+      const captureText = buildCaptureText(snapshot, providerConfig);
+      logBrowserSessionEvent('capture.intake.started', {
+        sessionId,
+        provider: record.provider,
         sourceType: mapProviderToSourceType(record.provider),
+        currentUrl: snapshot.url,
+        rawTextLength: captureText.length,
+        durationMs: Date.now() - captureStartedAt,
+      });
+
+      let job;
+      try {
+        job = await jobOfferService.createFromManualInput({
+          rawText: captureText,
+          sourceUrl: snapshot.url,
+          sourceLabel: providerConfig?.sourceLabel ?? 'LinkedIn supervised session',
+          sourceType: mapProviderToSourceType(record.provider),
+          structuredJob: buildStructuredJobInput(snapshot),
+        });
+      } catch (error) {
+        logBrowserSessionEvent('capture.intake.failed', {
+          sessionId,
+          provider: record.provider,
+          currentUrl: snapshot.url,
+          errorName: error?.name ?? 'Error',
+          errorCode: error?.code ?? error?.details?.code ?? null,
+          errorMessage: error?.message ?? 'Error desconocido',
+          durationMs: Date.now() - intakeStartedAt,
+        });
+        throw error;
+      }
+
+      logBrowserSessionEvent('capture.intake.completed', {
+        sessionId,
+        provider: record.provider,
+        currentUrl: snapshot.url,
+        jobId: job.id,
+        jobStatus: job.match?.status ?? null,
+        matchScore: job.match?.score ?? null,
+        durationMs: Date.now() - intakeStartedAt,
       });
 
       const updated = updateSessionFromSnapshot(record, snapshot, {
@@ -310,11 +423,44 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
         lastCapturedAt: new Date().toISOString(),
       });
 
+      const persistenceStartedAt = Date.now();
+      logBrowserSessionEvent('capture.persistence.started', {
+        sessionId,
+        provider: record.provider,
+        jobId: job.id,
+      });
       await repository.updateBrowserSession(updated);
+      logBrowserSessionEvent('capture.persistence.completed', {
+        sessionId,
+        provider: record.provider,
+        jobId: job.id,
+        durationMs: Date.now() - persistenceStartedAt,
+      });
+
+      const auditStartedAt = Date.now();
+      logBrowserSessionEvent('capture.audit.started', {
+        sessionId,
+        provider: record.provider,
+        jobId: job.id,
+      });
       await auditService.record('browser_session.job_captured', 'browser_session', sessionId, {
         jobId: job.id,
         currentUrl: snapshot.url,
         status: updated.status,
+      });
+      logBrowserSessionEvent('capture.audit.completed', {
+        sessionId,
+        provider: record.provider,
+        jobId: job.id,
+        durationMs: Date.now() - auditStartedAt,
+      });
+
+      logBrowserSessionEvent('capture.completed', {
+        sessionId,
+        provider: record.provider,
+        runtimeKind: updated.metadata?.runtimeKind ?? 'local',
+        jobId: job.id,
+        currentUrl: snapshot.url,
       });
 
       return {
@@ -474,6 +620,100 @@ function normalizeLinkedInUrl(value) {
 
 function buildCaptureText(snapshot, providerConfig) {
   return buildStructuredCaptureText(snapshot, providerConfig?.sourceLabel);
+}
+
+function validateStructuredCaptureSnapshot(provider, snapshot) {
+  if (provider !== BROWSER_SESSION_PROVIDER.LINKEDIN_JOBS) {
+    return null;
+  }
+
+  const title = cleanStructuredScalar(snapshot?.extractedJob?.title) ?? normalizePageTitle(snapshot?.title);
+  const description = cleanStructuredScalar(snapshot?.extractedJob?.description);
+  const titleLength = String(title ?? '').length;
+  const descriptionLength = String(description ?? '').length;
+
+  if (!title || titleLength > 180 || looksLikeLinkedInCardNoise(title) || hasRepeatedLeadingSegment(title)) {
+    return new HttpError(
+      409,
+      'No se pudo identificar con suficiente confianza el detalle de la vacante seleccionada. Verifica que el panel de la oferta esté abierto e inténtalo nuevamente.',
+      {
+        code: 'LINKEDIN_CAPTURE_INVALID_TITLE',
+        currentUrl: snapshot?.url ?? null,
+        title: title ?? null,
+        titleLength,
+      },
+    );
+  }
+
+  if (!description || descriptionLength < 80 || looksLikeLinkedInCardNoise(description)) {
+    return new HttpError(
+      409,
+      'No se pudo identificar con suficiente confianza el detalle de la vacante seleccionada. Verifica que el panel de la oferta esté abierto e inténtalo nuevamente.',
+      {
+        code: 'LINKEDIN_CAPTURE_INVALID_DESCRIPTION',
+        currentUrl: snapshot?.url ?? null,
+        title,
+        titleLength,
+        descriptionLength,
+      },
+    );
+  }
+
+  return null;
+}
+
+function buildStructuredJobInput(snapshot) {
+  if (!snapshot?.extractedJob && !snapshot?.title) {
+    return null;
+  }
+
+  const titleFromExtraction = cleanStructuredScalar(snapshot.extractedJob?.title);
+  const titleFromPage = normalizePageTitle(snapshot.title);
+  const extractedJob = snapshot.extractedJob ? structuredClone(snapshot.extractedJob) : {};
+
+  return {
+    ...extractedJob,
+    title: titleFromExtraction ?? titleFromPage,
+  };
+}
+
+function normalizePageTitle(value) {
+  const cleaned = cleanStructuredScalar(value)?.replace(/\s*\|\s*linkedin\s*$/i, '').trim() ?? null;
+  if (!cleaned || /^(linkedin|linkedin jobs|empleos|jobs)$/i.test(cleaned)) {
+    return null;
+  }
+
+  return cleaned;
+}
+
+function cleanStructuredScalar(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const cleaned = value.replace(/\s+/g, ' ').trim();
+  return cleaned || null;
+}
+
+function looksLikeLinkedInCardNoise(value) {
+  return /seleccionado|visto|adel[a-záéíóú]+\s+a\s+solicitar\s+el\s+empleo|figurar[ií]as\s+entre|publicado\s+hace|posted\s+\d+\s+\w+\s+ago/i.test(
+    String(value ?? ''),
+  );
+}
+
+function hasRepeatedLeadingSegment(value) {
+  const normalized = cleanStructuredScalar(value)?.toLowerCase() ?? '';
+  if (!normalized) {
+    return false;
+  }
+
+  const words = normalized.split(/\s+/);
+  if (words.length < 6) {
+    return false;
+  }
+
+  const prefix = words.slice(0, Math.min(6, Math.floor(words.length / 2))).join(' ');
+  return prefix.length >= 12 && normalized.includes(`${prefix} ${prefix}`);
 }
 
 async function executeRuntimeCall(breaker, operation) {
@@ -653,6 +893,35 @@ function describeDesktopAgentRefreshError(error) {
   };
 }
 
+function describeLinkedInCaptureError(error, provider) {
+  if (provider !== BROWSER_SESSION_PROVIDER.LINKEDIN_JOBS) {
+    return null;
+  }
+
+  if (error?.code === 'LINKEDIN_JOB_NOT_OPEN') {
+    return {
+      code: error.code,
+      message: 'No se detectó una oferta de empleo abierta. Abra una vacante antes de iniciar la captura.',
+      details: {
+        currentUrl: error?.details?.currentUrl ?? null,
+      },
+    };
+  }
+
+  if (error?.code === 'LINKEDIN_JOB_DESCRIPTION_NOT_READY') {
+    return {
+      code: error.code,
+      message: 'La oferta aún no terminó de cargar o no contiene una descripción visible.',
+      details: {
+        currentUrl: error?.details?.currentUrl ?? null,
+        length: error?.details?.length ?? 0,
+      },
+    };
+  }
+
+  return null;
+}
+
 function logBrowserSessionEvent(stage, payload) {
   console.info(
     `[browser-session-service] ${JSON.stringify({
@@ -661,4 +930,11 @@ function logBrowserSessionEvent(stage, payload) {
       ...payload,
     })}`,
   );
+}
+
+function sanitizePreview(value, maxLength) {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
 }

@@ -9,6 +9,8 @@ const DESKTOP_AGENT_STATUS = {
 
 export function createDesktopAgentService(repository, auditService, options = {}) {
   const config = options.config;
+  const logLevel = normalizeLogLevel(config?.LOG_LEVEL);
+  const logEvent = (stage, payload) => logDesktopAgentEvent(stage, payload, logLevel);
 
   return {
     async register(input) {
@@ -35,7 +37,7 @@ export function createDesktopAgentService(repository, auditService, options = {}
           createdAt: existing.createdAt,
         };
         await repository.updateDesktopAgent(updated);
-        logDesktopAgentEvent('register.updated', {
+        logEvent('register.updated', {
           agentId: updated.id,
           status: updated.status,
         });
@@ -48,7 +50,7 @@ export function createDesktopAgentService(repository, auditService, options = {}
       }
 
       await repository.saveDesktopAgent(record);
-      logDesktopAgentEvent('register.created', {
+      logEvent('register.created', {
         agentId: record.id,
         status: record.status,
       });
@@ -72,7 +74,7 @@ export function createDesktopAgentService(repository, auditService, options = {}
       };
 
       await repository.updateDesktopAgent(updated);
-      logDesktopAgentEvent('heartbeat.received', {
+      logEvent('heartbeat.received', {
         agentId: updated.id,
         status: updated.status,
         activeJobId: input.activeJobId ?? null,
@@ -87,7 +89,7 @@ export function createDesktopAgentService(repository, auditService, options = {}
             agentId: updated.id,
             updatedAt: now,
           });
-          logDesktopAgentEvent('job.running', {
+          logEvent('job.running', {
             agentId: updated.id,
             jobId: job.id,
             sessionId: job.sessionId,
@@ -118,12 +120,12 @@ export function createDesktopAgentService(repository, auditService, options = {}
           status: DESKTOP_AGENT_STATUS.ONLINE,
           updatedAt: new Date().toISOString(),
         });
-        logDesktopAgentEvent('job.none', {
+        logEvent('job.none', {
           agentId,
           status: 'ONLINE',
         });
       } else {
-        logDesktopAgentEvent('job.claimed', {
+        logEvent('job.claimed', {
           agentId,
           jobId: job.id,
           sessionId: job.sessionId,
@@ -147,7 +149,7 @@ export function createDesktopAgentService(repository, auditService, options = {}
         completedAt: now,
         updatedAt: now,
       });
-      logDesktopAgentEvent('job.completed', {
+      logEvent('job.completed', {
         agentId: input.agentId ?? job.agentId ?? null,
         jobId,
         sessionId: job.sessionId,
@@ -178,7 +180,7 @@ export function createDesktopAgentService(repository, auditService, options = {}
         completedAt: now,
         updatedAt: now,
       });
-      logDesktopAgentEvent('job.failed', {
+      logEvent('job.failed', {
         agentId: input.agentId ?? job.agentId ?? null,
         jobId,
         sessionId: job.sessionId,
@@ -240,12 +242,42 @@ async function setAgentStatus(repository, agentId, status) {
   });
 }
 
-function logDesktopAgentEvent(stage, payload) {
-  console.info(
+function logDesktopAgentEvent(stage, payload, currentLogLevel = 'info') {
+  const level = resolveDesktopAgentLogLevel(stage);
+  if (!shouldLog(level, currentLogLevel)) {
+    return;
+  }
+  const writer = typeof console[level] === 'function' ? console[level].bind(console) : console.info.bind(console);
+  writer(
     `[desktop-agent-service] ${JSON.stringify({
       stage,
       timestamp: new Date().toISOString(),
       ...payload,
     })}`,
   );
+}
+
+function resolveDesktopAgentLogLevel(stage) {
+  if (stage === 'heartbeat.received' || stage === 'job.none' || stage === 'job.running') {
+    return 'debug';
+  }
+
+  return 'info';
+}
+
+function normalizeLogLevel(value) {
+  return ['debug', 'info', 'warn', 'error'].includes(String(value).toLowerCase())
+    ? String(value).toLowerCase()
+    : 'info';
+}
+
+function shouldLog(level, currentLogLevel) {
+  const weights = {
+    debug: 10,
+    info: 20,
+    warn: 30,
+    error: 40,
+  };
+
+  return (weights[level] ?? weights.info) >= (weights[currentLogLevel] ?? weights.info);
 }

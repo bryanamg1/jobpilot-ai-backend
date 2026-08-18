@@ -17,7 +17,20 @@ export function normalizeUrl(value) {
   try {
     const url = new URL(value);
     url.hash = '';
-    url.search = '';
+    const isLinkedInJobSearchResults =
+      url.hostname.toLowerCase().endsWith('linkedin.com') &&
+      url.pathname.toLowerCase().startsWith('/jobs/search-results/');
+
+    if (isLinkedInJobSearchResults) {
+      const currentJobId = url.searchParams.get('currentJobId');
+      url.search = '';
+      if (currentJobId) {
+        url.searchParams.set('currentJobId', currentJobId);
+      }
+    } else {
+      url.search = '';
+    }
+
     return url.toString().replace(/\/$/, '');
   } catch {
     return String(value).trim();

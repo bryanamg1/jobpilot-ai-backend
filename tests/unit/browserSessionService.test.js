@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createBrowserSessionService } from '../../src/services/browser/browserSessionService.js';
 
+const DETAIL_TEXT =
+  'We are hiring a Backend Engineer with Node.js, SQL, APIs, observability, testing and collaboration across distributed teams.';
+
 function createRepositoryMock() {
   const browserSessions = [];
 
@@ -204,6 +207,10 @@ describe('browserSessionService', () => {
         sourceLabel: 'LinkedIn Jobs supervised session',
         sourceUrl: 'https://www.linkedin.com/jobs/view/12345',
         rawText: expect.stringContaining('Title: Backend Developer'),
+        structuredJob: expect.objectContaining({
+          title: 'Backend Developer',
+          company: 'Acme Labs',
+        }),
       }),
     );
     expect(auditService.record).toHaveBeenCalledWith(
@@ -214,6 +221,252 @@ describe('browserSessionService', () => {
         jobId: 'job-captured-1',
       }),
     );
+  });
+
+  it('rechaza la captura cuando no hay una vacante abierta en LinkedIn Jobs', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => ({
+        handle: { id: 'runtime-handle-invalid-job-1' },
+        snapshot: {
+          title: 'LinkedIn Jobs',
+          url: 'https://www.linkedin.com/jobs/',
+          visibleText: 'LinkedIn Jobs Home',
+          capturedAt: '2026-08-05T20:00:00.000Z',
+          isLinkedIn: true,
+          isJobsSection: true,
+          isJobView: false,
+          requiresAttention: false,
+          attentionReasons: [],
+        },
+      })),
+      captureSnapshot: vi.fn(async () => {
+        const error = new Error('No se detectó una oferta de empleo abierta. Abra una vacante antes de iniciar la captura.');
+        error.code = 'LINKEDIN_JOB_NOT_OPEN';
+        error.details = {
+          currentUrl: 'https://www.linkedin.com/jobs/',
+        };
+        throw error;
+      }),
+      getSnapshot: vi.fn(),
+      navigate: vi.fn(),
+      close: vi.fn(),
+    };
+    const jobOfferService = {
+      createFromManualInput: vi.fn(),
+    };
+    const service = createBrowserSessionService(repository, auditService, jobOfferService, { runtime });
+
+    const session = await service.startSession({ provider: 'LINKEDIN_JOBS' });
+
+    await expect(service.captureCurrentJob(session.id)).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'No se detectó una oferta de empleo abierta. Abra una vacante antes de iniciar la captura.',
+      details: expect.objectContaining({
+        currentUrl: 'https://www.linkedin.com/jobs/',
+      }),
+    });
+    expect(jobOfferService.createFromManualInput).not.toHaveBeenCalled();
+  });
+
+  it('rechaza la captura cuando la descripcion de la vacante aun no termino de cargar', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => ({
+        handle: { id: 'runtime-handle-invalid-job-2' },
+        snapshot: {
+          title: 'LinkedIn Jobs',
+          url: 'https://www.linkedin.com/jobs/view/12345',
+          visibleText: 'LinkedIn Jobs detail',
+          capturedAt: '2026-08-05T20:00:00.000Z',
+          isLinkedIn: true,
+          isJobsSection: true,
+          isJobView: true,
+          requiresAttention: false,
+          attentionReasons: [],
+        },
+      })),
+      captureSnapshot: vi.fn(async () => {
+        const error = new Error('La oferta aún no terminó de cargar o no contiene una descripción visible.');
+        error.code = 'LINKEDIN_JOB_DESCRIPTION_NOT_READY';
+        error.details = {
+          currentUrl: 'https://www.linkedin.com/jobs/view/12345',
+          length: 0,
+        };
+        throw error;
+      }),
+      getSnapshot: vi.fn(),
+      navigate: vi.fn(),
+      close: vi.fn(),
+    };
+    const jobOfferService = {
+      createFromManualInput: vi.fn(),
+    };
+    const service = createBrowserSessionService(repository, auditService, jobOfferService, { runtime });
+
+    const session = await service.startSession({ provider: 'LINKEDIN_JOBS' });
+
+    await expect(service.captureCurrentJob(session.id)).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'La oferta aún no terminó de cargar o no contiene una descripción visible.',
+      details: expect.objectContaining({
+        currentUrl: 'https://www.linkedin.com/jobs/view/12345',
+        length: 0,
+      }),
+    });
+    expect(jobOfferService.createFromManualInput).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una captura cuando el titulo estructurado parece una card del listado', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => ({
+        handle: { id: 'runtime-handle-invalid-job-3' },
+        snapshot: {
+          title: 'LinkedIn Jobs',
+          url: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4425937421',
+          visibleText: 'LinkedIn Jobs detail',
+          capturedAt: '2026-08-05T20:00:00.000Z',
+          isLinkedIn: true,
+          isJobsSection: true,
+          isJobView: false,
+          isFeedSection: false,
+          isPostSearchSection: false,
+          isPostDetail: false,
+          requiresAttention: false,
+          attentionReasons: [],
+        },
+      })),
+      captureSnapshot: vi.fn(async () => ({
+        title: 'Backend Engineer (Node.js, SQL) | LinkedIn',
+        url: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4425937421',
+        visibleText: 'Backend Engineer (Node.js, SQL) Sundayy Estados Unidos En remoto',
+        capturedAt: '2026-08-05T20:05:00.000Z',
+        isLinkedIn: true,
+        isJobsSection: true,
+        isJobView: false,
+        isFeedSection: false,
+        isPostSearchSection: false,
+        isPostDetail: false,
+        hiringSignals: [],
+        visibleEmails: [],
+        requiresAttention: false,
+        attentionReasons: [],
+        extractedJob: {
+          title:
+            'Seleccionado, Backend Engineer (Node.js, SQL) Backend Engineer (Node.js, SQL) Sundayy Estados Unidos En remoto Visto Publicado hace 12 horas',
+          company: 'Sundayy',
+          description: DETAIL_TEXT,
+          quality: {
+            title: 'LOW',
+            company: 'LOW',
+            description: 'LOW',
+          },
+          debugSources: {
+            title: 'selector:title',
+            descriptionSelection: {
+              strategy: 'attribute_current_job',
+            },
+          },
+        },
+      })),
+      getSnapshot: vi.fn(),
+      navigate: vi.fn(),
+      close: vi.fn(),
+    };
+    const jobOfferService = {
+      createFromManualInput: vi.fn(),
+    };
+    const service = createBrowserSessionService(repository, auditService, jobOfferService, { runtime });
+
+    const session = await service.startSession({ provider: 'LINKEDIN_JOBS' });
+
+    await expect(service.captureCurrentJob(session.id)).rejects.toMatchObject({
+      statusCode: 409,
+      message:
+        'No se pudo identificar con suficiente confianza el detalle de la vacante seleccionada. Verifica que el panel de la oferta esté abierto e inténtalo nuevamente.',
+      details: expect.objectContaining({
+        code: 'LINKEDIN_CAPTURE_INVALID_TITLE',
+      }),
+    });
+    expect(jobOfferService.createFromManualInput).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una captura cuando la descripcion estructurada todavia parece una card del listado', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => ({
+        handle: { id: 'runtime-handle-invalid-job-4' },
+        snapshot: {
+          title: 'LinkedIn Jobs',
+          url: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4425937421',
+          visibleText: 'LinkedIn Jobs detail',
+          capturedAt: '2026-08-05T20:00:00.000Z',
+          isLinkedIn: true,
+          isJobsSection: true,
+          isJobView: false,
+          isFeedSection: false,
+          isPostSearchSection: false,
+          isPostDetail: false,
+          requiresAttention: false,
+          attentionReasons: [],
+        },
+      })),
+      captureSnapshot: vi.fn(async () => ({
+        title: 'Backend Engineer (Node.js, SQL) | LinkedIn',
+        url: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4425937421',
+        visibleText: 'Backend Engineer (Node.js, SQL) Sundayy Estados Unidos En remoto',
+        capturedAt: '2026-08-05T20:05:00.000Z',
+        isLinkedIn: true,
+        isJobsSection: true,
+        isJobView: false,
+        isFeedSection: false,
+        isPostSearchSection: false,
+        isPostDetail: false,
+        hiringSignals: [],
+        visibleEmails: [],
+        requiresAttention: false,
+        attentionReasons: [],
+        extractedJob: {
+          title: 'Backend Engineer (Node.js, SQL)',
+          company: 'Sundayy',
+          description:
+            'Seleccionado, Backend Engineer (Node.js, SQL) Sundayy Estados Unidos En remoto Visto Adelantate a solicitar el empleo Publicado hace 12 horas',
+          quality: {
+            title: 'HIGH',
+            company: 'MEDIUM',
+            description: 'LOW',
+          },
+          debugSources: {
+            title: 'selector:h1',
+            descriptionSelection: {
+              strategy: 'attribute_current_job',
+            },
+          },
+        },
+      })),
+      getSnapshot: vi.fn(),
+      navigate: vi.fn(),
+      close: vi.fn(),
+    };
+    const jobOfferService = {
+      createFromManualInput: vi.fn(),
+    };
+    const service = createBrowserSessionService(repository, auditService, jobOfferService, { runtime });
+
+    const session = await service.startSession({ provider: 'LINKEDIN_JOBS' });
+
+    await expect(service.captureCurrentJob(session.id)).rejects.toMatchObject({
+      statusCode: 409,
+      details: expect.objectContaining({
+        code: 'LINKEDIN_CAPTURE_INVALID_DESCRIPTION',
+      }),
+    });
+    expect(jobOfferService.createFromManualInput).not.toHaveBeenCalled();
   });
 
   it('captures a hiring publication from the supervised LinkedIn feed', async () => {

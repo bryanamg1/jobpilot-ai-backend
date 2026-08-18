@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { asyncHandler } from '../../lib/asyncHandler.js';
 import { HttpError } from '../../lib/httpError.js';
@@ -39,8 +40,17 @@ const nextJobQuerySchema = z.object({
   agentId: z.string().trim().min(1),
 });
 
-export function createDesktopAgentRouter({ desktopAgentService, agentToken }) {
+export function createDesktopAgentRouter({ desktopAgentService, agentToken, rateLimitOptions = {} }) {
   const router = Router();
+  const desktopAgentRateLimiter = rateLimit({
+    windowMs: rateLimitOptions.windowMs ?? 60_000,
+    limit: rateLimitOptions.limit ?? 600,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator(req) {
+      return req.header('x-desktop-agent-token')?.trim() || 'desktop-agent';
+    },
+  });
 
   router.use((req, _res, next) => {
     const token = req.header('x-desktop-agent-token');
@@ -50,6 +60,7 @@ export function createDesktopAgentRouter({ desktopAgentService, agentToken }) {
     }
     next();
   });
+  router.use(desktopAgentRateLimiter);
 
   router.post(
     '/register',

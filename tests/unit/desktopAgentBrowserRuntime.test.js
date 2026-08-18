@@ -91,6 +91,36 @@ describe('desktopAgentBrowserRuntime', () => {
     ).rejects.toThrow('Worker failed');
   });
 
+  it('preserva currentUrl dentro de error.details cuando el worker reporta detalles anidados', async () => {
+    const repository = createRepositoryMock({
+      status: 'FAILED',
+      error: {
+        message: 'Descripcion no visible',
+        code: 'LINKEDIN_JOB_DESCRIPTION_NOT_READY',
+        details: {
+          currentUrl: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4425937421',
+          length: 0,
+        },
+      },
+    });
+    const runtime = createDesktopAgentBrowserRuntime(repository, {
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    });
+
+    await expect(
+      runtime.getSnapshot({
+        sessionId: 'session-2b',
+      }),
+    ).rejects.toMatchObject({
+      code: 'LINKEDIN_JOB_DESCRIPTION_NOT_READY',
+      details: expect.objectContaining({
+        currentUrl: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4425937421',
+        length: 0,
+      }),
+    });
+  });
+
   it('falla rapido cuando no hay desktop agent activo conectado al backend', async () => {
     const repository = {
       listDesktopAgents: vi.fn(async () => []),

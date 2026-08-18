@@ -121,6 +121,13 @@ export function buildApp(options = {}) {
   const resumeService = options.resumeService ?? createResumeService(repository, auditService);
 
   const app = express();
+  const publicApiRateLimiter = rateLimit({
+    windowMs: env.RATE_LIMIT_WINDOW_MS,
+    limit: env.RATE_LIMIT_MAX,
+    skip(req) {
+      return req.path.startsWith('/api/v1/desktop-agent');
+    },
+  });
 
   app.set('trust proxy', 1);
   app.use(requestContext);
@@ -172,10 +179,7 @@ export function buildApp(options = {}) {
     }),
   );
   app.use(
-    rateLimit({
-      windowMs: env.RATE_LIMIT_WINDOW_MS,
-      limit: env.RATE_LIMIT_MAX,
-    }),
+    publicApiRateLimiter,
   );
   app.use(express.json({ limit: '8mb' }));
 
@@ -185,6 +189,7 @@ export function buildApp(options = {}) {
     createDesktopAgentRouter({
       desktopAgentService,
       agentToken: options.desktopAgentToken ?? env.DESKTOP_AGENT_TOKEN,
+      rateLimitOptions: options.desktopAgentRateLimitOptions,
     }),
   );
   app.use('/api/v1/approvals', createApprovalsRouter({ approvalRequestService }));

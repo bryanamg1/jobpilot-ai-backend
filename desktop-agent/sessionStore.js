@@ -12,8 +12,8 @@ export function createSessionStore(runtime) {
       return runtime.navigate(requireHandle(sessions, sessionId), url);
     },
 
-    async getSnapshot(sessionId) {
-      return runtime.getSnapshot(requireHandle(sessions, sessionId));
+    async getSnapshot(sessionId, options = {}) {
+      return runtime.getSnapshot(requireHandle(sessions, sessionId), options);
     },
 
     async closeSession(sessionId) {

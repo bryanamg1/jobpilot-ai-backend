@@ -1,22 +1,21 @@
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { env } from '../../config/env.js';
-import { CERTAINTY } from '../../constants/certainty.js';
 import { userFacingText } from '../../constants/userFacingText.js';
 import { retryOperation } from '../../lib/retry.js';
 import { aiDraftPreviewSchema } from '../../schemas/aiDraftSchemas.js';
+import { buildDraftContext } from './draftContextBuilder.js';
+import { buildDraftPrompt } from './draftPromptBuilder.js';
 
 const SYSTEM_PROMPT = `
-Generas un borrador preliminar y prudente para una postulacion laboral.
+Generas un borrador de postulacion laboral en espanol.
 
 Rules:
-- Responde siempre en espanol.
-- Nunca inventes experiencia, anos, nivel de ingles, expectativas salariales, autorizacion laboral, reubicacion ni respuestas legales.
-- Excluye hechos con certeza UNKNOWN o PROHIBITED.
-- Excluye hechos sensibles que requieran aprobacion, salvo que ya esten aprobados.
-- Manten un tono profesional, conciso y completamente veraz.
-- Usa solo el perfil del candidato y el analisis de vacante provistos.
-- Describe compatibilidad solo con tecnologias, proyectos y alineacion de rol confirmados.
+- El correo debe sonar humano, breve, directo y veraz.
+- Usa solo informacion del contexto provisto.
+- Nunca inventes experiencia, anos, seniority, nivel de ingles, salario, autorizacion laboral, reubicacion ni respuestas legales.
+- No menciones razonamiento interno, hechos del sistema, certezas, inferencias ni etiquetas tecnicas.
+- Mantene el cuerpo entre 150 y 250 palabras.
 - Devuelve solo la salida estructurada solicitada.
 `.trim();
 
@@ -26,8 +25,9 @@ export function createOpenAiDraftService(options = {}) {
   const breaker = options.breaker ?? null;
 
   return {
-    async generateDraft(jobAnalysis) {
-      const fallback = buildFallbackDraft(jobAnalysis);
+    async generateDraft(jobAnalysis, generationOptions = {}) {
+      const context = buildDraftContext(jobAnalysis, generationOptions);
+      const fallback = buildFallbackDraft(jobAnalysis, generationOptions, context);
 
       if (config.isTest || config.OPENAI_FEATURE_MODE !== 'assist' || !config.OPENAI_API_KEY || !client) {
         return {
@@ -66,7 +66,7 @@ export function createOpenAiDraftService(options = {}) {
                       content: [
                         {
                           type: 'input_text',
-                          text: buildPrompt(jobAnalysis, fallback),
+                          text: buildDraftPrompt(context),
                         },
                       ],
                     },
@@ -86,15 +86,15 @@ export function createOpenAiDraftService(options = {}) {
 
         return {
           ...fallback,
-          subject: parsed.subject,
-          body: parsed.body,
-          highlights: parsed.highlights,
-          factsUsed: mergeFacts(fallback.factsUsed, parsed.factsUsed),
+          subject: sanitizeGeneratedText(parsed.subject) || fallback.subject,
+          body: sanitizeGeneratedText(parsed.body) || fallback.body,
+          highlights: dedupeStrings([...fallback.highlights, ...(parsed.highlights ?? [])]).slice(0, 6),
+          factsUsed: mergeFacts(fallback.factsUsed, parsed.factsUsed ?? []),
           generation: {
             mode: 'hybrid',
             provider: 'openai',
             model: config.OPENAI_MODEL,
-            warnings: dedupeStrings([...fallback.generation.warnings, ...parsed.warnings]),
+            warnings: dedupeStrings([...fallback.generation.warnings, ...(parsed.warnings ?? [])]),
           },
         };
       } catch {
@@ -134,16 +134,11 @@ function createClient(config) {
   });
 }
 
-export function buildFallbackDraft(jobAnalysis) {
-  const recipient = jobAnalysis.jobOffer.recruiterEmail || null;
-  const company = sanitizeCompany(jobAnalysis.jobOffer.company);
-  const approvals = jobAnalysis.match.approvals.map((item) => `${item.field}: ${item.reason}`);
-  const blocked = [...jobAnalysis.match.excludedByRules];
-  const factsUsed = collectFacts(jobAnalysis);
-  const highlights = factsUsed
-    .filter((fact) => fact.field === 'technology' || fact.field === 'project' || fact.field === 'targetRole')
-    .slice(0, 5)
-    .map((fact) => fact.value);
+export function buildFallbackDraft(jobAnalysis, generationOptions = {}, existingContext = null) {
+  const context = existingContext ?? buildDraftContext(jobAnalysis, generationOptions);
+  const recipient = context.job.recruiterEmail;
+  const approvals = (jobAnalysis.match.approvals ?? []).map((item) => `${item.field}: ${item.reason}`);
+  const blocked = [...(jobAnalysis.match.excludedByRules ?? [])];
 
   if (blocked.length) {
     return {
@@ -151,8 +146,8 @@ export function buildFallbackDraft(jobAnalysis) {
       recipient,
       subject: null,
       body: null,
-      highlights,
-      factsUsed,
+      highlights: context.highlights,
+      factsUsed: context.factsUsed,
       approvalsRequired: approvals,
       blockedReasons: blocked,
       generation: {
@@ -163,24 +158,6 @@ export function buildFallbackDraft(jobAnalysis) {
       },
     };
   }
-
-  const subject = userFacingText.draft.subject(jobAnalysis.jobOffer.title);
-  const body = [
-    recipient ? userFacingText.draft.greetingKnown : userFacingText.draft.greetingTeam,
-    '',
-    userFacingText.draft.intro(jobAnalysis.jobOffer.title, company),
-    buildFitParagraph(jobAnalysis),
-    buildProjectParagraph(jobAnalysis),
-    userFacingText.draft.closing,
-    '',
-    userFacingText.draft.farewell,
-    'Bryan Marquez',
-    'Buenos Aires, Argentina',
-    'GitHub: https://github.com/bryanamg1',
-    'LinkedIn: https://www.linkedin.com/in/bryan-marquez-dev/',
-  ]
-    .filter(Boolean)
-    .join('\n');
 
   const warnings = [...approvals];
   if (!recipient) {
@@ -195,10 +172,10 @@ export function buildFallbackDraft(jobAnalysis) {
   return {
     status: approvals.length ? 'REVIEW_REQUIRED' : 'READY',
     recipient,
-    subject,
-    body,
-    highlights,
-    factsUsed,
+    subject: buildSubject(context),
+    body: buildBody(context),
+    highlights: context.highlights,
+    factsUsed: context.factsUsed,
     approvalsRequired: approvals,
     blockedReasons: [],
     generation: {
@@ -210,108 +187,94 @@ export function buildFallbackDraft(jobAnalysis) {
   };
 }
 
-function buildPrompt(jobAnalysis, fallbackDraft) {
-  return `
-Responde siempre en espanol.
+function buildSubject(context) {
+  if (context.job.title) {
+    return `Postulacion para ${context.job.title} - Bryan Marquez`;
+  }
 
-Perfil del candidato:
-${JSON.stringify(jobAnalysis.profile, null, 2)}
+  if (context.job.company) {
+    return `Postulacion a ${context.job.company} - Bryan Marquez`;
+  }
 
-Vacante:
-${JSON.stringify(jobAnalysis.jobOffer, null, 2)}
-
-Resumen del matching:
-${JSON.stringify(jobAnalysis.match, null, 2)}
-
-Borrador determinista inicial:
-${JSON.stringify(
-    {
-      subject: fallbackDraft.subject,
-      body: fallbackDraft.body,
-      factsUsed: fallbackDraft.factsUsed,
-      approvalsRequired: fallbackDraft.approvalsRequired,
-      blockedReasons: fallbackDraft.blockedReasons,
-    },
-    null,
-    2,
-  )}
-`.trim();
+  return 'Postulacion laboral - Bryan Marquez';
 }
 
-function collectFacts(jobAnalysis) {
-  const facts = [];
-  const certaintyByField = new Map(
-    jobAnalysis.jobOffer.certaintyMap.map((entry) => [entry.field, entry]),
-  );
+function buildBody(context) {
+  const paragraphs = [
+    'Hola,',
+    buildIntroParagraph(context),
+    buildFitParagraph(context),
+    buildProjectsParagraph(context),
+    buildClosingParagraph(context),
+    'Saludos,\\nBryan Marquez',
+  ].filter(Boolean);
 
-  for (const technology of jobAnalysis.match.matchedTechnologies) {
-    facts.push({
-      field: 'technology',
-      value: technology,
-      certainty: CERTAINTY.CONFIRMED,
-      source: 'candidate_profile',
-    });
-  }
-
-  for (const project of jobAnalysis.jobOffer.title.toLowerCase().includes('backend')
-    ? ['Social App', 'PronostIA']
-    : ['TechStore']) {
-    facts.push({
-      field: 'project',
-      value: project,
-      certainty: CERTAINTY.CONFIRMED,
-      source: 'candidate_profile',
-    });
-  }
-
-  if (jobAnalysis.jobOffer.title) {
-    facts.push({
-      field: 'targetRole',
-      value: jobAnalysis.jobOffer.title,
-      certainty: certaintyByField.get('title')?.certainty ?? CERTAINTY.INFERRED,
-      source: certaintyByField.get('title')?.source ?? 'job_offer',
-    });
-  }
-
-  const company = sanitizeCompany(jobAnalysis.jobOffer.company);
-  if (company) {
-    facts.push({
-      field: 'company',
-      value: company,
-      certainty: certaintyByField.get('company')?.certainty ?? CERTAINTY.INFERRED,
-      source: certaintyByField.get('company')?.source ?? 'job_offer',
-    });
-  }
-
-  return mergeFacts([], facts).filter(
-    (fact) => fact.certainty !== CERTAINTY.UNKNOWN && fact.certainty !== CERTAINTY.PROHIBITED,
-  );
+  return paragraphs.join('\\n\\n');
 }
 
-function buildFitParagraph(jobAnalysis) {
-  const technologies = jobAnalysis.match.matchedTechnologies.slice(0, 4);
-  const roleFocus = jobAnalysis.profile.modalities.includes('remote')
-    ? userFacingText.draft.remoteFit
-    : '';
+function buildIntroParagraph(context) {
+  const roleReference = context.job.title
+    ? `la posicion de ${context.job.title}`
+    : 'la oportunidad que publicaron recientemente';
 
-  const techSentence = technologies.length
-    ? userFacingText.draft.techAligned(technologies)
-    : userFacingText.draft.roleAligned;
-
-  return [techSentence, roleFocus].filter(Boolean).join(' ');
-}
-
-function buildProjectParagraph(jobAnalysis) {
-  const projects = collectFacts(jobAnalysis)
-    .filter((fact) => fact.field === 'project')
-    .map((fact) => fact.value)
-    .slice(0, 2);
-
-  if (!projects.length) {
-    return null;
+  if (context.job.company) {
+    return `Mi nombre es Bryan Marquez y me gustaria postularme a ${roleReference} en ${context.job.company}. Me interesa especialmente sumar mi perfil a un equipo donde pueda aportar desde un stack JavaScript orientado a producto.`;
   }
 
-  return userFacingText.draft.projects(projects);
+  return `Mi nombre es Bryan Marquez y me gustaria postularme a ${roleReference}. Me interesa especialmente aportar en un rol donde pueda trabajar sobre productos web y resolver necesidades concretas desde el desarrollo.`;
+}
+
+function buildFitParagraph(context) {
+  const technologies = joinNaturalList(context.candidate.relevantTechnologies);
+  const experiences = joinNaturalList(context.candidate.relevantExperience);
+  const roleSentence = technologies
+    ? `Mi experiencia hoy esta mas cerca de trabajar con ${technologies}`
+    : 'Mi perfil esta orientado a desarrollo web con foco full stack';
+  const experienceSentence = experiences
+    ? `, especialmente en ${experiences}.`
+    : '.';
+
+  return `${roleSentence}${experienceSentence} Son puntos que veo alineados con lo que pide la vacante y con el tipo de aporte que puedo hacer desde el inicio, manteniendo una base practica y un enfoque de implementacion prolijo.`;
+}
+
+function buildProjectsParagraph(context) {
+  const projects = joinNaturalList(context.candidate.relevantProjects);
+  const availability = context.candidate.availability?.toLowerCase() ?? 'full time';
+  const modalities = joinNaturalList(context.candidate.modalities);
+
+  if (!projects) {
+    return `Actualmente estoy en ${context.candidate.location} y tengo disponibilidad ${availability}. Tambien me resulta comodo trabajar en esquemas ${modalities} cuando el rol lo requiere.`;
+  }
+
+  return `Ademas, proyectos como ${projects} me ayudaron a consolidar una forma de trabajo orientada a construir, iterar y cuidar la calidad tecnica del producto. Actualmente estoy en ${context.candidate.location} y tengo disponibilidad ${availability}, con comodidad para trabajar en esquemas ${modalities}.`;
+}
+
+function buildClosingParagraph(context) {
+  const resumeReference = context.job.title
+    ? `la version de CV mas alineada con ${context.job.title}`
+    : 'la version de CV mas alineada con la vacante';
+
+  return `Si les interesa, con gusto puedo ampliar cualquier punto en una conversacion y compartir ${resumeReference}. Muchas gracias por el tiempo.`;
+}
+
+function joinNaturalList(values = []) {
+  const normalized = values.filter(Boolean);
+  if (!normalized.length) {
+    return '';
+  }
+  if (normalized.length === 1) {
+    return normalized[0];
+  }
+  if (normalized.length === 2) {
+    return `${normalized[0]} y ${normalized[1]}`;
+  }
+
+  return `${normalized.slice(0, -1).join(', ')} y ${normalized.at(-1)}`;
+}
+
+function sanitizeGeneratedText(value) {
+  const normalized = String(value ?? '').trim();
+  return normalized || null;
 }
 
 function mergeFacts(baseFacts, nextFacts) {
@@ -330,13 +293,4 @@ function mergeFacts(baseFacts, nextFacts) {
 
 function dedupeStrings(values) {
   return [...new Set(values.filter(Boolean))];
-}
-
-function sanitizeCompany(value) {
-  const normalized = String(value ?? '').trim();
-  if (!normalized || /^unknown\b/i.test(normalized) || /^empresa desconocida$/i.test(normalized)) {
-    return null;
-  }
-
-  return normalized;
 }

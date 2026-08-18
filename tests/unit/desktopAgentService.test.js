@@ -109,4 +109,35 @@ describe('desktopAgentService', () => {
       }),
     );
   });
+
+  it('no imprime heartbeat.received cuando LOG_LEVEL es info', async () => {
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const repository = createRepositoryMock();
+    repository._agents.push({
+      id: 'agent-1',
+      status: 'ONLINE',
+      version: '1.0.0',
+      os: 'Windows',
+      hostname: 'BRYAN-PC',
+      metadata: {},
+      lastHeartbeatAt: null,
+      createdAt: '2026-08-12T12:00:00.000Z',
+      updatedAt: '2026-08-12T12:00:00.000Z',
+    });
+    const service = createDesktopAgentService(repository, { record: vi.fn(async () => ({})) }, {
+      config: {
+        DESKTOP_AGENT_POLL_INTERVAL_MS: 5000,
+        DESKTOP_AGENT_HEARTBEAT_MS: 30000,
+        LOG_LEVEL: 'info',
+      },
+    });
+
+    await service.heartbeat({
+      agentId: 'agent-1',
+      status: 'ONLINE',
+    });
+
+    expect(debugSpy).not.toHaveBeenCalled();
+    debugSpy.mockRestore();
+  });
 });

@@ -17,7 +17,12 @@ export function createJobDraftService(repository, auditService, options = {}) {
         throw new HttpError(404, 'Job analysis not found');
       }
 
-      const preview = await openAiDraftService.generateDraft(jobAnalysis);
+      const candidateProfile =
+        typeof repository.getCandidateProfile === 'function'
+          ? await repository.getCandidateProfile()
+          : null;
+
+      const preview = await openAiDraftService.generateDraft(jobAnalysis, { candidateProfile });
       const approvalRequests = await approvalRequestService.listRequestsForJob(jobId);
       const suggestedAnswers = approvalRequestService.decorateSuggestions(
         await answerLibraryService.getPreviewSuggestions(jobAnalysis),

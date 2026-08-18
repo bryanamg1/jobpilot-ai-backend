@@ -1,4 +1,5 @@
-﻿import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { defaultCandidateProfile } from '../../src/config/candidateProfileSeed.js';
 import { buildFallbackDraft, createOpenAiDraftService } from '../../src/services/openai/openAiDraftService.js';
 
 const sampleJobAnalysis = {
@@ -6,46 +7,79 @@ const sampleJobAnalysis = {
     name: 'Bryan Marquez',
     modalities: ['remote', 'hybrid'],
   },
+  source: {
+    originalUrl: 'https://example.com/jobs/backend',
+  },
   jobOffer: {
     title: 'Backend Developer',
     company: 'Acme Labs',
     recruiterEmail: 'jobs@acmelabs.com',
+    modality: ['remote'],
+    technologies: ['Node.js', 'Express', 'MySQL', 'Jest'],
     certaintyMap: [
       { field: 'title', value: 'Backend Developer', certainty: 'INFERRED', source: 'manual_text_first_line' },
       { field: 'company', value: 'Acme Labs', certainty: 'INFERRED', source: 'manual_text' },
     ],
   },
   match: {
-    matchedTechnologies: ['Node.js', 'Express'],
+    matchedTechnologies: ['Node.js', 'Express', 'MySQL'],
     approvals: [{ field: 'salary', reason: 'El salario es un dato sensible y requiere aprobacion manual.' }],
     excludedByRules: [],
   },
 };
 
 describe('openAiDraftService', () => {
-  it('builds a safe deterministic draft when approvals still exist', () => {
-    const draft = buildFallbackDraft(sampleJobAnalysis);
+  it('builds a natural deterministic draft when approvals still exist', () => {
+    const draft = buildFallbackDraft(sampleJobAnalysis, {
+      candidateProfile: defaultCandidateProfile,
+    });
 
     expect(draft.status).toBe('REVIEW_REQUIRED');
     expect(draft.subject).toContain('Backend Developer');
     expect(draft.body).toContain('Bryan Marquez');
+    expect(draft.body).toContain('Acme Labs');
+    expect(draft.body).not.toContain('Mi stack confirmado');
     expect(draft.approvalsRequired[0]).toContain('salary');
   });
 
-  it('omits unknown companies and keeps the fallback draft natural', () => {
-    const draft = buildFallbackDraft({
-      ...sampleJobAnalysis,
-      jobOffer: {
-        ...sampleJobAnalysis.jobOffer,
-        company: 'Unknown company',
-        recruiterEmail: null,
+  it('keeps the draft natural when the company is unknown', () => {
+    const draft = buildFallbackDraft(
+      {
+        ...sampleJobAnalysis,
+        jobOffer: {
+          ...sampleJobAnalysis.jobOffer,
+          company: 'Unknown company',
+          recruiterEmail: null,
+        },
       },
-    });
+      {
+        candidateProfile: defaultCandidateProfile,
+      },
+    );
 
-    expect(draft.body).toContain('A quien corresponda,');
-    expect(draft.body).toContain('me interesa la oportunidad de Backend Developer.');
+    expect(draft.body).toContain('Hola,');
+    expect(draft.body).toContain('la posicion de Backend Developer');
     expect(draft.body).not.toContain('Unknown company');
-    expect(draft.body).not.toContain('Mi stack confirmado');
+    expect(draft.body).not.toContain('Empresa desconocida');
+  });
+
+  it('uses a general template when the title is unknown', () => {
+    const draft = buildFallbackDraft(
+      {
+        ...sampleJobAnalysis,
+        jobOffer: {
+          ...sampleJobAnalysis.jobOffer,
+          title: 'Unknown title',
+        },
+      },
+      {
+        candidateProfile: defaultCandidateProfile,
+      },
+    );
+
+    expect(draft.subject).toBe('Postulacion a Acme Labs - Bryan Marquez');
+    expect(draft.body).toContain('la oportunidad que publicaron recientemente');
+    expect(draft.body).not.toContain('Unknown title');
   });
 
   it('uses structured output when the OpenAI client succeeds', async () => {
@@ -54,7 +88,8 @@ describe('openAiDraftService', () => {
         parse: vi.fn().mockResolvedValue({
           output_parsed: {
             subject: 'Postulacion para Backend Developer - Bryan Marquez',
-            body: 'Hola,\n\nMe interesa la vacante de Backend Developer.\n\nSaludos,\nBryan Marquez',
+            body:
+              'Hola,\\n\\nMe interesa la posicion de Backend Developer en Acme Labs. Mi experiencia se alinea con Node.js, Express y MySQL, y proyectos como Social App y PronostIA respaldan ese encaje.\\n\\nSaludos,\\nBryan Marquez',
             highlights: ['Node.js', 'Express'],
             factsUsed: [
               {
@@ -82,11 +117,12 @@ describe('openAiDraftService', () => {
       },
     });
 
-    const draft = await service.generateDraft(sampleJobAnalysis);
+    const draft = await service.generateDraft(sampleJobAnalysis, {
+      candidateProfile: defaultCandidateProfile,
+    });
 
     expect(draft.generation.mode).toBe('hybrid');
     expect(draft.subject).toContain('Postulacion para Backend Developer');
     expect(client.responses.parse).toHaveBeenCalledTimes(1);
   });
 });
-

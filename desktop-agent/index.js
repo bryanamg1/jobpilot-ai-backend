@@ -21,6 +21,7 @@ async function main() {
   const sessionStore = createSessionStore(runtime);
   const workerService = createWorkerService(client, sessionStore, {
     pollIntervalMs: env.DESKTOP_AGENT_POLL_INTERVAL_MS,
+    logLevel: env.LOG_LEVEL,
     agentMeta: {
       version: '1.0.0',
       os: `${os.platform()} ${os.release()}`,
