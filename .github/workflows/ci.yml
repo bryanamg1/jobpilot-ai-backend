@@ -16,7 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
+  backend-check:
+    name: backend-check
     runs-on: ubuntu-latest
 
     steps:
