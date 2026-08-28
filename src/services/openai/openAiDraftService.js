@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { env } from '../../config/env.js';
+import { JOB_STATUS } from '../../constants/jobStatus.js';
 import { userFacingText } from '../../constants/userFacingText.js';
 import { retryOperation } from '../../lib/retry.js';
 import { aiDraftPreviewSchema } from '../../schemas/aiDraftSchemas.js';
@@ -29,6 +30,10 @@ export function createOpenAiDraftService(options = {}) {
       const context = buildDraftContext(jobAnalysis, generationOptions);
       const fallback = buildFallbackDraft(jobAnalysis, generationOptions, context);
 
+      if (shouldSkipProviderDraft(jobAnalysis, fallback)) {
+        return fallback;
+      }
+
       if (config.isTest || config.OPENAI_FEATURE_MODE !== 'assist' || !config.OPENAI_API_KEY || !client) {
         return {
           ...fallback,
@@ -36,17 +41,22 @@ export function createOpenAiDraftService(options = {}) {
             mode: 'deterministic',
             provider: 'openai',
             model: null,
+            attemptCount: 0,
+            fallbackReason: 'disabled',
             warnings: [...fallback.generation.warnings],
           },
         };
       }
 
+      let attemptCount = 0;
       try {
         const response = await executeProviderCall(
           breaker,
           () =>
             retryOperation(
-              () =>
+              (attempt) => {
+                attemptCount = attempt;
+                return (
                 client.responses.parse({
                   model: config.OPENAI_MODEL,
                   reasoning: {
@@ -71,10 +81,13 @@ export function createOpenAiDraftService(options = {}) {
                       ],
                     },
                   ],
-                }),
+                })
+                );
+              },
               {
-                attempts: config.EXTERNAL_RETRY_ATTEMPTS,
+                attempts: config.OPENAI_DRAFT_RETRY_ATTEMPTS,
                 baseDelayMs: config.isTest ? 0 : config.EXTERNAL_RETRY_BASE_DELAY_MS,
+                shouldRetry: shouldRetryOpenAiError,
               },
             ),
         );
@@ -94,20 +107,25 @@ export function createOpenAiDraftService(options = {}) {
             mode: 'hybrid',
             provider: 'openai',
             model: config.OPENAI_MODEL,
+            attemptCount,
+            fallbackReason: null,
             warnings: dedupeStrings([...fallback.generation.warnings, ...(parsed.warnings ?? [])]),
           },
         };
-      } catch {
+      } catch (error) {
         return {
           ...fallback,
           generation: {
             mode: 'deterministic',
             provider: 'openai',
             model: config.OPENAI_MODEL,
+            attemptCount: attemptCount || attemptCountFromError(error),
+            fallbackReason: detectFallbackReason(error),
             warnings: [
               ...fallback.generation.warnings,
               'No se pudo personalizar el borrador con IA en este intento. Se muestra una version segura para revisar manualmente.',
             ],
+            error: serializeProviderError(error),
           },
         };
       }
@@ -130,7 +148,8 @@ function createClient(config) {
 
   return new OpenAI({
     apiKey: config.OPENAI_API_KEY,
-    timeout: config.OPENAI_TIMEOUT_MS,
+    timeout: config.OPENAI_DRAFT_TIMEOUT_MS ?? config.OPENAI_TIMEOUT_MS,
+    maxRetries: config.OPENAI_MAX_RETRIES,
   });
 }
 
@@ -139,8 +158,10 @@ export function buildFallbackDraft(jobAnalysis, generationOptions = {}, existing
   const recipient = context.job.recruiterEmail;
   const approvals = (jobAnalysis.match.approvals ?? []).map((item) => `${item.field}: ${item.reason}`);
   const blocked = [...(jobAnalysis.match.excludedByRules ?? [])];
+  const matchStatus = jobAnalysis.match?.status ?? null;
 
-  if (blocked.length) {
+  if (blocked.length || matchStatus === JOB_STATUS.REJECTED_BY_RULES || matchStatus === JOB_STATUS.REJECTED) {
+    const blockedReasons = blocked.length ? blocked : [userFacingText.draft.rejectedWarning];
     return {
       status: 'BLOCKED',
       recipient,
@@ -149,12 +170,14 @@ export function buildFallbackDraft(jobAnalysis, generationOptions = {}, existing
       highlights: context.highlights,
       factsUsed: context.factsUsed,
       approvalsRequired: approvals,
-      blockedReasons: blocked,
+      blockedReasons,
       generation: {
         mode: 'deterministic',
         provider: 'openai',
         model: null,
-        warnings: [userFacingText.draft.blockedWarning],
+        attemptCount: 0,
+        fallbackReason: blocked.length ? 'blocked' : 'not_recommended',
+        warnings: [blocked.length ? userFacingText.draft.blockedWarning : userFacingText.draft.rejectedWarning],
       },
     };
   }
@@ -182,6 +205,8 @@ export function buildFallbackDraft(jobAnalysis, generationOptions = {}, existing
       mode: 'deterministic',
       provider: 'openai',
       model: null,
+      attemptCount: 0,
+      fallbackReason: null,
       warnings,
     },
   };
@@ -293,4 +318,60 @@ function mergeFacts(baseFacts, nextFacts) {
 
 function dedupeStrings(values) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function detectFallbackReason(error) {
+  const name = String(error?.name ?? '').trim();
+  const message = String(error?.message ?? '').trim().toLowerCase();
+  const status = Number(error?.status ?? 0);
+
+  if (name === 'APIConnectionTimeoutError' || message.includes('timed out')) {
+    return 'timeout';
+  }
+  if (name === 'ZodError' || status === 400 || status === 422) {
+    return 'validation_error';
+  }
+  if (status === 401 || status === 403 || error?.code === 'invalid_api_key') {
+    return 'configuration_error';
+  }
+  if (status === 429 || error?.code === 'rate_limit_exceeded') {
+    return 'rate_limited';
+  }
+  if (status >= 500) {
+    return 'provider_error';
+  }
+  return 'provider_failed';
+}
+
+function attemptCountFromError(error) {
+  return Number(error?.attemptCount ?? 1) || 1;
+}
+
+function shouldRetryOpenAiError(error, attempt) {
+  const status = Number(error?.status ?? 0);
+  if (attempt >= 2) {
+    return false;
+  }
+  return status === 429 || status >= 500;
+}
+
+function shouldSkipProviderDraft(jobAnalysis, fallback) {
+  return (
+    fallback.status === 'BLOCKED' ||
+    jobAnalysis?.match?.status === JOB_STATUS.REJECTED_BY_RULES ||
+    jobAnalysis?.match?.status === JOB_STATUS.REJECTED
+  );
+}
+
+function serializeProviderError(error) {
+  if (!error) {
+    return null;
+  }
+
+  return {
+    name: error?.name ?? 'Error',
+    code: error?.code ?? null,
+    providerStatus: Number(error?.status ?? 0) || null,
+    failureType: detectFallbackReason(error),
+  };
 }

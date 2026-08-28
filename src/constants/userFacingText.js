@@ -18,6 +18,7 @@ export const userFacingText = {
   },
   draft: {
     blockedWarning: 'La vacante contiene requisitos no verificados o sensibles y necesita revision manual antes de preparar un correo.',
+    rejectedWarning: 'La vacante fue descartada durante el analisis y no se generara un borrador automatico.',
     recipientMissing: 'No se ve un correo de contacto en la fuente. No prepares el borrador de Gmail todavia.',
     noResumeSelected:
       'Todavia no se selecciono un CV para esta vacante. Selecciona el CV mas adecuado antes de enviar la postulacion.',
@@ -50,6 +51,7 @@ export const userFacingText = {
       'La disponibilidad inmediata debe confirmarse manualmente antes de preparar cualquier borrador.',
     legalQuestions: 'Las respuestas legales o de compliance no pueden completarse automaticamente.',
     advancedEnglish: 'La vacante exige ingles avanzado por encima del nivel B1 confirmado.',
+    fluentEnglish: 'La vacante exige ingles fluido y debe revisarse contra el nivel B1 confirmado.',
     intermediateEnglish:
       'El requerimiento de ingles intermedio debe revisarse contra el nivel B1 confirmado.',
     yearsOfExperience: (years) =>
@@ -66,6 +68,8 @@ export const userFacingText = {
       `${technology} no esta confirmado en el perfil.`,
     advancedEnglishGap:
       'El requisito de ingles avanzado supera el nivel B1 confirmado.',
+    fluentEnglishGap:
+      'La vacante pide ingles fluido y el nivel confirmado B1 requiere revision manual.',
     seniorityGap:
       'La vacante apunta a seniority senior y el perfil actual esta orientado a roles junior.',
     salarySensitive: 'La expectativa salarial requiere revision manual antes de usarse.',

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createBrowserSessionService } from '../../src/services/browser/browserSessionService.js';
+import { createCircuitBreaker } from '../../src/lib/circuitBreaker.js';
 
 const DETAIL_TEXT =
   'We are hiring a Backend Engineer with Node.js, SQL, APIs, observability, testing and collaboration across distributed teams.';
@@ -319,6 +320,128 @@ describe('browserSessionService', () => {
     expect(jobOfferService.createFromManualInput).not.toHaveBeenCalled();
   });
 
+  it('no abre el circuit breaker despues de tres conflictos semanticos consecutivos de captura', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const breaker = createCircuitBreaker('playwright', {
+      failureThreshold: 3,
+      cooldownMs: 30_000,
+    });
+    const runtime = {
+      startSession: vi.fn(async () => ({
+        handle: { id: 'runtime-handle-semantic-circuit-1' },
+        snapshot: {
+          title: 'LinkedIn Jobs',
+          url: 'https://www.linkedin.com/jobs/view/12345',
+          visibleText: 'LinkedIn Jobs detail',
+          capturedAt: '2026-08-05T20:00:00.000Z',
+          isLinkedIn: true,
+          isJobsSection: true,
+          isJobView: true,
+          requiresAttention: false,
+          attentionReasons: [],
+        },
+      })),
+      captureSnapshot: vi.fn(async () => {
+        const error = new Error('La oferta aún no terminó de cargar o no contiene una descripción visible.');
+        error.code = 'LINKEDIN_JOB_DESCRIPTION_NOT_READY';
+        error.details = {
+          currentUrl: 'https://www.linkedin.com/jobs/view/12345',
+          currentJobId: '12345',
+          length: 0,
+          candidateCount: 0,
+          waitedMs: 10_000,
+          selectedStrategy: null,
+        };
+        throw error;
+      }),
+      getSnapshot: vi.fn(),
+      navigate: vi.fn(),
+      close: vi.fn(),
+    };
+    const service = createBrowserSessionService(repository, auditService, { createFromManualInput: vi.fn() }, {
+      runtime,
+      breaker,
+    });
+
+    const session = await service.startSession({ provider: 'LINKEDIN_JOBS' });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(service.captureCurrentJob(session.id)).rejects.toMatchObject({
+        statusCode: 409,
+        details: expect.objectContaining({
+          candidateCount: 0,
+        }),
+      });
+    }
+
+    expect(breaker.getSnapshot()).toEqual(
+      expect.objectContaining({
+        state: 'closed',
+        consecutiveFailures: 0,
+      }),
+    );
+  });
+
+  it('abre el circuit breaker solo con fallos tecnicos repetidos y luego devuelve 503 semantico', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const breaker = createCircuitBreaker('playwright', {
+      failureThreshold: 3,
+      cooldownMs: 30_000,
+    });
+    const runtime = {
+      startSession: vi.fn(async () => ({
+        handle: { id: 'runtime-handle-technical-circuit-1' },
+        snapshot: {
+          title: 'LinkedIn Jobs',
+          url: 'https://www.linkedin.com/jobs/view/12345',
+          visibleText: 'LinkedIn Jobs detail',
+          capturedAt: '2026-08-05T20:00:00.000Z',
+          isLinkedIn: true,
+          isJobsSection: true,
+          isJobView: true,
+          requiresAttention: false,
+          attentionReasons: [],
+        },
+      })),
+      captureSnapshot: vi.fn(async () => {
+        const error = new Error('transport failure');
+        error.code = 'PLAYWRIGHT_TRANSPORT_FAILED';
+        throw error;
+      }),
+      getSnapshot: vi.fn(),
+      navigate: vi.fn(),
+      close: vi.fn(),
+    };
+    const service = createBrowserSessionService(repository, auditService, { createFromManualInput: vi.fn() }, {
+      runtime,
+      breaker,
+    });
+
+    const session = await service.startSession({ provider: 'LINKEDIN_JOBS' });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(service.captureCurrentJob(session.id)).rejects.toThrow('transport failure');
+    }
+
+    expect(breaker.getSnapshot()).toEqual(
+      expect.objectContaining({
+        state: 'open',
+        consecutiveFailures: 3,
+      }),
+    );
+
+    await expect(service.captureCurrentJob(session.id)).rejects.toMatchObject({
+      statusCode: 503,
+      message: 'La automatizacion del navegador esta temporalmente no disponible. Intenta nuevamente en unos segundos.',
+      details: expect.objectContaining({
+        errorCode: 'CIRCUIT_OPEN',
+        retryAfterMs: expect.any(Number),
+      }),
+    });
+  });
+
   it('rechaza una captura cuando el titulo estructurado parece una card del listado', async () => {
     const repository = createRepositoryMock();
     const auditService = { record: vi.fn(async () => ({})) };
@@ -439,6 +562,80 @@ describe('browserSessionService', () => {
           quality: {
             title: 'HIGH',
             company: 'MEDIUM',
+            description: 'LOW',
+          },
+          debugSources: {
+            title: 'selector:h1',
+            descriptionSelection: {
+              strategy: 'attribute_current_job',
+            },
+          },
+        },
+      })),
+      getSnapshot: vi.fn(),
+      navigate: vi.fn(),
+      close: vi.fn(),
+    };
+    const jobOfferService = {
+      createFromManualInput: vi.fn(),
+    };
+    const service = createBrowserSessionService(repository, auditService, jobOfferService, { runtime });
+
+    const session = await service.startSession({ provider: 'LINKEDIN_JOBS' });
+
+    await expect(service.captureCurrentJob(session.id)).rejects.toMatchObject({
+      statusCode: 409,
+      details: expect.objectContaining({
+        code: 'LINKEDIN_CAPTURE_INVALID_DESCRIPTION',
+      }),
+    });
+    expect(jobOfferService.createFromManualInput).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una captura cuando la descripcion estructurada es promocional aunque sea larga', async () => {
+    const repository = createRepositoryMock();
+    const auditService = { record: vi.fn(async () => ({})) };
+    const runtime = {
+      startSession: vi.fn(async () => ({
+        handle: { id: 'runtime-handle-invalid-job-5' },
+        snapshot: {
+          title: 'LinkedIn Jobs',
+          url: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4299909228',
+          visibleText: 'LinkedIn Jobs detail',
+          capturedAt: '2026-08-05T20:00:00.000Z',
+          isLinkedIn: true,
+          isJobsSection: true,
+          isJobView: false,
+          isFeedSection: false,
+          isPostSearchSection: false,
+          isPostDetail: false,
+          requiresAttention: false,
+          attentionReasons: [],
+        },
+      })),
+      captureSnapshot: vi.fn(async () => ({
+        title: 'Software Engineer - Full Stack | InvGate | LinkedIn',
+        url: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4299909228',
+        visibleText: 'Software Engineer - Full Stack InvGate Remote',
+        capturedAt: '2026-08-05T20:05:00.000Z',
+        isLinkedIn: true,
+        isJobsSection: true,
+        isJobView: false,
+        isFeedSection: false,
+        isPostSearchSection: false,
+        isPostDetail: false,
+        hiringSignals: [],
+        visibleEmails: [],
+        requiresAttention: false,
+        attentionReasons: [],
+        extractedJob: {
+          title: 'Software Engineer - Full Stack',
+          company: null,
+          description:
+            'Estarías entre los candidatos destacados si mejoras tu perfil. Podemos ayudarte a captar el interés de recruiters. Applicant insights, Meet the hiring team y Try Premium para avanzar más rápido.',
+          quality: {
+            title: 'HIGH',
+            company: 'LOW',
             description: 'LOW',
           },
           debugSources: {

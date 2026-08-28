@@ -17,8 +17,10 @@ export function createCircuitBreaker(name, options = {}) {
   let lastError = null;
 
   return {
-    async execute(operation) {
+    async execute(operation, options = {}) {
       const now = Date.now();
+      const shouldCountFailure =
+        typeof options.shouldCountFailure === 'function' ? options.shouldCountFailure : null;
 
       if (state === 'open') {
         if (openedAt !== null && now - openedAt >= cooldownMs) {
@@ -39,6 +41,10 @@ export function createCircuitBreaker(name, options = {}) {
         openedAt = null;
         return result;
       } catch (error) {
+        if (shouldCountFailure && shouldCountFailure(error) === false) {
+          throw error;
+        }
+
         consecutiveFailures += 1;
         lastError = {
           name: error?.name ?? 'Error',

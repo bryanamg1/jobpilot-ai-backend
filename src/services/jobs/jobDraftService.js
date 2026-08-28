@@ -12,6 +12,7 @@ export function createJobDraftService(repository, auditService, options = {}) {
 
   return {
     async createPreview(jobId) {
+      const startedAt = Date.now();
       const jobAnalysis = await repository.getJobAnalysisById(jobId);
       if (!jobAnalysis) {
         throw new HttpError(404, 'Job analysis not found');
@@ -22,7 +23,49 @@ export function createJobDraftService(repository, auditService, options = {}) {
           ? await repository.getCandidateProfile()
           : null;
 
+      logJobDraftEvent('draft.generation.started', {
+        jobId,
+      });
       const preview = await openAiDraftService.generateDraft(jobAnalysis, { candidateProfile });
+      if (preview.generation?.fallbackReason === 'timeout') {
+        logJobDraftEvent('draft.generation.timeout', {
+          jobId,
+          mode: preview.generation.mode,
+          attemptCount: preview.generation.attemptCount ?? 0,
+          durationMs: Date.now() - startedAt,
+          fallbackReason: preview.generation.fallbackReason,
+        });
+      } else if (
+        preview.generation?.fallbackReason === 'blocked' ||
+        preview.generation?.fallbackReason === 'not_recommended'
+      ) {
+        logJobDraftEvent('draft.generation.skipped', {
+          jobId,
+          mode: preview.generation.mode,
+          attemptCount: preview.generation.attemptCount ?? 0,
+          durationMs: Date.now() - startedAt,
+          fallbackReason: preview.generation.fallbackReason,
+        });
+      } else if (preview.generation?.fallbackReason) {
+        logJobDraftEvent('draft.generation.failed', {
+          jobId,
+          mode: preview.generation.mode,
+          attemptCount: preview.generation.attemptCount ?? 0,
+          durationMs: Date.now() - startedAt,
+          fallbackReason: preview.generation.fallbackReason,
+          errorName: preview.generation.error?.name ?? null,
+          errorCode: preview.generation.error?.code ?? null,
+          providerStatus: preview.generation.error?.providerStatus ?? null,
+          failureType: preview.generation.error?.failureType ?? preview.generation.fallbackReason,
+        });
+      }
+      logJobDraftEvent('draft.generation.completed', {
+        jobId,
+        mode: preview.generation?.mode ?? 'unknown',
+        attemptCount: preview.generation?.attemptCount ?? 0,
+        durationMs: Date.now() - startedAt,
+        fallbackReason: preview.generation?.fallbackReason ?? null,
+      });
       const approvalRequests = await approvalRequestService.listRequestsForJob(jobId);
       const suggestedAnswers = approvalRequestService.decorateSuggestions(
         await answerLibraryService.getPreviewSuggestions(jobAnalysis),
@@ -54,4 +97,14 @@ export function createJobDraftService(repository, auditService, options = {}) {
       };
     },
   };
+}
+
+function logJobDraftEvent(stage, payload) {
+  console.info(
+    `[job-draft-service] ${JSON.stringify({
+      stage,
+      timestamp: new Date().toISOString(),
+      ...payload,
+    })}`,
+  );
 }
