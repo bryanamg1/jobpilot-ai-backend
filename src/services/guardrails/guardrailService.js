@@ -42,6 +42,10 @@ export function evaluateGuardrails(parsedOffer, profile) {
     blocked.push(flag('englishRequirement', CERTAINTY.PROHIBITED, userFacingText.guardrails.advancedEnglish));
   }
 
+  if (parsedOffer.jobOffer.englishRequirement === 'fluent') {
+    approvals.push(flag('englishLevel', CERTAINTY.REQUIRES_APPROVAL, userFacingText.guardrails.fluentEnglish));
+  }
+
   if (parsedOffer.jobOffer.englishRequirement === 'intermediate' && profile.englishLevel === 'B1') {
     approvals.push(
       flag(
@@ -52,7 +56,7 @@ export function evaluateGuardrails(parsedOffer, profile) {
     );
   }
 
-  const yearsRequirement = extractRequiredYears(text);
+  const yearsRequirement = extractRequiredYears(parsedOffer.jobOffer.requirementItems, text);
   if (yearsRequirement >= 3) {
     blocked.push(
       flag(
@@ -63,11 +67,7 @@ export function evaluateGuardrails(parsedOffer, profile) {
     );
   }
 
-  const prohibitedTechnologyClaims = profile.prohibitedClaims
-    .map((claim) => claim.toLowerCase())
-    .filter((claim) =>
-      parsedOffer.jobOffer.technologies.some((technology) => claim.includes(technology.toLowerCase())),
-    );
+  const prohibitedTechnologyClaims = findBlockedTechnologyClaims(parsedOffer, profile);
 
   for (const claim of prohibitedTechnologyClaims) {
     blocked.push(
@@ -89,9 +89,36 @@ function flag(field, certainty, reason) {
   return { field, certainty, reason };
 }
 
-function extractRequiredYears(text) {
+function extractRequiredYears(requirementItems = [], fallbackText = '') {
+  const requiredText = Array.isArray(requirementItems)
+    ? requirementItems
+        .filter((item) => item.level === 'required')
+        .map((item) => item.text)
+        .join('\n')
+    : '';
+  const text = requiredText || fallbackText;
   const matches = [...text.matchAll(/\b(\d)\+?\s+years?\b/gi)];
   return matches.reduce((highest, match) => Math.max(highest, Number(match[1] ?? 0)), 0);
+}
+
+function findBlockedTechnologyClaims(parsedOffer, profile) {
+  const claims = Array.isArray(parsedOffer.jobOffer.technologyClaims) ? parsedOffer.jobOffer.technologyClaims : [];
+  const confirmedTechnologies = new Set(
+    (profile.technologies ?? []).map((technology) => String(technology).trim().toLowerCase()),
+  );
+  const prohibitedClaims = (profile.prohibitedClaims ?? []).map((claim) => claim.toLowerCase());
+
+  return claims
+    .filter((claim) => claim.requirementLevel === 'required')
+    .filter((claim) => claim.relationship !== 'alternative')
+    .filter((claim) => !confirmedTechnologies.has(String(claim.technology).trim().toLowerCase()))
+    .map((claim) => {
+      const matchedProfileClaim = prohibitedClaims.find((entry) =>
+        entry.includes(String(claim.technology).trim().toLowerCase()),
+      );
+      return matchedProfileClaim ?? null;
+    })
+    .filter(Boolean);
 }
 
 function dedupeFlags(values) {

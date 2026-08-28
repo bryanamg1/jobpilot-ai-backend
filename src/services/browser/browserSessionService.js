@@ -281,16 +281,27 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
         );
       } catch (error) {
         const captureError = describeLinkedInCaptureError(error, record.provider);
+        const runtimeUnavailableError = describeBrowserRuntimeUnavailableError(error);
         logBrowserSessionEvent('capture.failed', {
           sessionId,
           provider: record.provider,
           runtimeKind: record.metadata?.runtimeKind ?? 'local',
-          errorCode: captureError?.code ?? error?.code ?? 'UNKNOWN',
-          errorMessage: captureError?.message ?? error?.message ?? 'Error desconocido',
+          errorCode: captureError?.code ?? runtimeUnavailableError?.errorCode ?? error?.code ?? 'UNKNOWN',
+          errorMessage:
+            captureError?.message ?? runtimeUnavailableError?.message ?? error?.message ?? 'Error desconocido',
         });
 
         if (captureError) {
           throw new HttpError(409, captureError.message, captureError.details);
+        }
+
+        if (runtimeUnavailableError) {
+          throw new HttpError(503, runtimeUnavailableError.message, {
+            errorCode: runtimeUnavailableError.errorCode,
+            reason: runtimeUnavailableError.reason,
+            suggestion: runtimeUnavailableError.suggestion,
+            retryAfterMs: runtimeUnavailableError.retryAfterMs ?? 0,
+          });
         }
 
         throw error;
@@ -392,6 +403,10 @@ export function createBrowserSessionService(repository, auditService, jobOfferSe
           sourceLabel: providerConfig?.sourceLabel ?? 'LinkedIn supervised session',
           sourceType: mapProviderToSourceType(record.provider),
           structuredJob: buildStructuredJobInput(snapshot),
+          captureMetadata: {
+            snapshotMs: Date.now() - captureStartedAt,
+            currentJobId: snapshot.extractedJob?.currentJobId ?? null,
+          },
         });
       } catch (error) {
         logBrowserSessionEvent('capture.intake.failed', {
@@ -645,7 +660,12 @@ function validateStructuredCaptureSnapshot(provider, snapshot) {
     );
   }
 
-  if (!description || descriptionLength < 80 || looksLikeLinkedInCardNoise(description)) {
+  if (
+    !description ||
+    descriptionLength < 80 ||
+    looksLikeLinkedInCardNoise(description) ||
+    looksLikeLinkedInPromotionNoise(description)
+  ) {
     return new HttpError(
       409,
       'No se pudo identificar con suficiente confianza el detalle de la vacante seleccionada. Verifica que el panel de la oferta esté abierto e inténtalo nuevamente.',
@@ -683,6 +703,11 @@ function normalizePageTitle(value) {
     return null;
   }
 
+  const segments = cleaned.split(/\s+\|\s+/u).map((segment) => segment.trim()).filter(Boolean);
+  if (segments.length === 2 && segments[1].length <= 40 && segments[0].length >= 8) {
+    return segments[0];
+  }
+
   return cleaned;
 }
 
@@ -697,6 +722,12 @@ function cleanStructuredScalar(value) {
 
 function looksLikeLinkedInCardNoise(value) {
   return /seleccionado|visto|adel[a-záéíóú]+\s+a\s+solicitar\s+el\s+empleo|figurar[ií]as\s+entre|publicado\s+hace|posted\s+\d+\s+\w+\s+ago/i.test(
+    String(value ?? ''),
+  );
+}
+
+function looksLikeLinkedInPromotionNoise(value) {
+  return /estar[ií]as entre los candidatos destacados|podemos ayudarte a captar el inter[eé]s|figurar[ií]as entre los principales solicitantes|adel[aá]ntate a solicitar|meet the hiring team|applicant insights|candidate insights|try premium/i.test(
     String(value ?? ''),
   );
 }
@@ -721,7 +752,9 @@ async function executeRuntimeCall(breaker, operation) {
     return operation();
   }
 
-  return breaker.execute(operation);
+  return breaker.execute(operation, {
+    shouldCountFailure: shouldTripBrowserCircuit,
+  });
 }
 
 function mapProviderToSourceType(provider) {
@@ -738,6 +771,11 @@ function mapProviderToSourceType(provider) {
 }
 
 function describeBrowserLaunchError(error) {
+  const runtimeUnavailable = describeBrowserRuntimeUnavailableError(error);
+  if (runtimeUnavailable) {
+    return runtimeUnavailable;
+  }
+
   if (error?.code === 'BROWSERLESS_CONFIG_ERROR') {
     return {
       errorCode: 'BROWSERLESS_CONFIG_ERROR',
@@ -817,6 +855,11 @@ function describeBrowserLaunchError(error) {
 }
 
 function describeBrowserRemoteControlError(error) {
+  const runtimeUnavailable = describeBrowserRuntimeUnavailableError(error);
+  if (runtimeUnavailable) {
+    return runtimeUnavailable;
+  }
+
   if (error?.code === 'BROWSERLESS_REMOTE_CONTROL_ERROR') {
     return {
       errorCode: 'BROWSERLESS_REMOTE_CONTROL_ERROR',
@@ -854,6 +897,11 @@ function describeBrowserRemoteControlError(error) {
 }
 
 function describeDesktopAgentRefreshError(error) {
+  const runtimeUnavailable = describeBrowserRuntimeUnavailableError(error);
+  if (runtimeUnavailable) {
+    return runtimeUnavailable;
+  }
+
   const rawMessage = String(error?.message ?? '').trim();
 
   if (error?.code === 'DESKTOP_AGENT_UNAVAILABLE' || error?.code === 'DESKTOP_AGENT_JOB_NOT_CLAIMED') {
@@ -914,12 +962,102 @@ function describeLinkedInCaptureError(error, provider) {
       message: 'La oferta aún no terminó de cargar o no contiene una descripción visible.',
       details: {
         currentUrl: error?.details?.currentUrl ?? null,
+        currentJobId: error?.details?.currentJobId ?? null,
         length: error?.details?.length ?? 0,
+        candidateCount: error?.details?.candidateCount ?? 0,
+        waitedMs: error?.details?.waitedMs ?? 0,
+        selectedStrategy: error?.details?.selectedStrategy ?? null,
+      },
+    };
+  }
+
+  if (error?.code === 'LINKEDIN_JOB_DESCRIPTION_NOT_FOUND') {
+    return {
+      code: error.code,
+      message: 'No se encontró una descripción laboral válida dentro del panel de detalle visible.',
+      details: {
+        currentUrl: error?.details?.currentUrl ?? null,
+        currentJobId: error?.details?.currentJobId ?? null,
+        length: error?.details?.length ?? 0,
+        candidateCount: error?.details?.candidateCount ?? 0,
+        waitedMs: error?.details?.waitedMs ?? 0,
+        selectedStrategy: error?.details?.selectedStrategy ?? null,
+        detailPaneFound: error?.details?.detailPaneFound ?? false,
+        detailPaneTextLength: error?.details?.detailPaneTextLength ?? 0,
+        semanticHeadingMatches: error?.details?.semanticHeadingMatches ?? 0,
+        descriptiveBlockCandidates: error?.details?.descriptiveBlockCandidates ?? 0,
+      },
+    };
+  }
+
+  if (error?.code === 'LINKEDIN_JOB_CAPTURE_CHANGED') {
+    return {
+      code: error.code,
+      message: 'La vacante cambió mientras se preparaba la captura. Vuelve a abrir la oferta y reintenta.',
+      details: {
+        currentUrl: error?.details?.currentUrl ?? null,
+        currentJobId: error?.details?.currentJobId ?? null,
+        expectedJobId: error?.details?.expectedJobId ?? null,
+        length: error?.details?.length ?? 0,
+        candidateCount: error?.details?.candidateCount ?? 0,
+        waitedMs: error?.details?.waitedMs ?? 0,
+        selectedStrategy: error?.details?.selectedStrategy ?? null,
       },
     };
   }
 
   return null;
+}
+
+function describeBrowserRuntimeUnavailableError(error) {
+  if (error?.code !== 'CIRCUIT_OPEN') {
+    return null;
+  }
+
+  const retryAfterMs = Number(error?.details?.retryAfterMs ?? 0);
+  return {
+    errorCode: 'CIRCUIT_OPEN',
+    message: 'La automatizacion del navegador esta temporalmente no disponible. Intenta nuevamente en unos segundos.',
+    reason: 'El runtime del navegador abrio el circuit breaker despues de varios fallos tecnicos consecutivos.',
+    suggestion:
+      retryAfterMs > 0
+        ? `Espera aproximadamente ${Math.ceil(retryAfterMs / 1000)} segundos antes de reintentar.`
+        : 'Espera unos segundos antes de reintentar.',
+    retryAfterMs,
+  };
+}
+
+function shouldTripBrowserCircuit(error) {
+  if (!error) {
+    return true;
+  }
+
+  if (error instanceof HttpError) {
+    return error.statusCode >= 500;
+  }
+
+  if (error?.code === 'CIRCUIT_OPEN') {
+    return false;
+  }
+
+  const semanticCodes = new Set([
+    'LINKEDIN_JOB_NOT_OPEN',
+    'LINKEDIN_JOB_DESCRIPTION_NOT_READY',
+    'LINKEDIN_JOB_DESCRIPTION_NOT_FOUND',
+    'LINKEDIN_JOB_CAPTURE_CHANGED',
+    'LINKEDIN_CAPTURE_INVALID_TITLE',
+    'LINKEDIN_CAPTURE_INVALID_DESCRIPTION',
+  ]);
+
+  if (semanticCodes.has(error?.code)) {
+    return false;
+  }
+
+  if (typeof error?.statusCode === 'number' && error.statusCode < 500) {
+    return false;
+  }
+
+  return true;
 }
 
 function logBrowserSessionEvent(stage, payload) {

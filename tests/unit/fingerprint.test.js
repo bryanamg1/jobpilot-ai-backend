@@ -13,6 +13,15 @@ describe('fingerprint normalization', () => {
     expect(normalizeUrl(firstUrl)).not.toBe(normalizeUrl(secondUrl));
   });
 
+  it('normalizes /jobs/view and /jobs/search-results for the same LinkedIn vacancy to the same canonical URL', () => {
+    const directViewUrl = 'https://www.linkedin.com/jobs/view/4448035675/?trackingId=abc123';
+    const searchResultsUrl =
+      'https://www.linkedin.com/jobs/search-results/?currentJobId=4448035675&keywords=backend&trackingId=xyz';
+
+    expect(normalizeUrl(directViewUrl)).toBe('https://www.linkedin.com/jobs/search-results/?currentJobId=4448035675');
+    expect(normalizeUrl(searchResultsUrl)).toBe('https://www.linkedin.com/jobs/search-results/?currentJobId=4448035675');
+  });
+
   it('generates different fingerprints for different LinkedIn search-results jobs', () => {
     const common = {
       title: 'Backend Developer',
@@ -32,5 +41,46 @@ describe('fingerprint normalization', () => {
     });
 
     expect(first).not.toBe(second);
+  });
+
+  it('generates the same fingerprint for equivalent LinkedIn view and search-results URLs of the same vacancy', () => {
+    const common = {
+      title: 'Backend Developer',
+      company: 'Acme Labs',
+      contactEmail: null,
+    };
+
+    const directViewFingerprint = buildOfferFingerprint({
+      ...common,
+      sourceUrl: 'https://www.linkedin.com/jobs/view/4448035675/?trackingId=abc123',
+    });
+    const searchResultsFingerprint = buildOfferFingerprint({
+      ...common,
+      sourceUrl:
+        'https://www.linkedin.com/jobs/search-results/?currentJobId=4448035675&keywords=backend&refId=foo',
+    });
+
+    expect(directViewFingerprint).toBe(searchResultsFingerprint);
+  });
+
+  it('ignores volatile tracking params for the same LinkedIn vacancy', () => {
+    const common = {
+      title: 'Backend Developer',
+      company: 'Acme Labs',
+      contactEmail: null,
+    };
+
+    const first = buildOfferFingerprint({
+      ...common,
+      sourceUrl:
+        'https://www.linkedin.com/jobs/search-results/?currentJobId=4448035675&trackingId=aaa&refId=bbb&eBP=ccc',
+    });
+    const second = buildOfferFingerprint({
+      ...common,
+      sourceUrl:
+        'https://www.linkedin.com/jobs/search-results/?currentJobId=4448035675&trackingId=ddd&refId=eee&eBP=fff',
+    });
+
+    expect(first).toBe(second);
   });
 });

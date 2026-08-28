@@ -38,6 +38,34 @@ describe('matchJobOffer', () => {
     expect(match.excludedByRules.length).toBeGreaterThan(0);
   });
 
+  it('usa REJECTED cuando el score es bajo pero no existen reglas bloqueantes', () => {
+    const parsed = {
+      source: {
+        originalText: 'Senior Golang Platform Engineer. Remote LATAM.',
+      },
+      jobOffer: {
+        title: 'Senior Golang Platform Engineer',
+        company: 'Platform Co',
+        location: 'Remote LATAM',
+        modality: ['remote'],
+        seniority: 'senior',
+        englishRequirement: 'basic',
+        technologies: ['Go', 'Kubernetes', 'Terraform'],
+        salary: null,
+        flags: {
+          asksForSalary: false,
+        },
+      },
+    };
+    const guardrails = { approvals: [], blocked: [] };
+
+    const match = matchJobOffer(defaultCandidateProfile, parsed, guardrails);
+
+    expect(match.excludedByRules).toHaveLength(0);
+    expect(match.score).toBeLessThan(50);
+    expect(match.status).toBe('REJECTED');
+  });
+
   it('normalizes equivalent technologies and does not leave unknown company placeholders', () => {
     const parsed = parseManualJob({
       rawText: `

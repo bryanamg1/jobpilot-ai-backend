@@ -17,22 +17,36 @@ export function normalizeUrl(value) {
   try {
     const url = new URL(value);
     url.hash = '';
-    const isLinkedInJobSearchResults =
-      url.hostname.toLowerCase().endsWith('linkedin.com') &&
-      url.pathname.toLowerCase().startsWith('/jobs/search-results/');
+    const hostname = url.hostname.toLowerCase();
+    const pathname = url.pathname.toLowerCase();
+    const isLinkedInJobsUrl = hostname.endsWith('linkedin.com') && pathname.startsWith('/jobs/');
+    const canonicalJobId = extractLinkedInJobId(url);
 
-    if (isLinkedInJobSearchResults) {
-      const currentJobId = url.searchParams.get('currentJobId');
+    if (isLinkedInJobsUrl && canonicalJobId) {
+      url.pathname = '/jobs/search-results/';
       url.search = '';
-      if (currentJobId) {
-        url.searchParams.set('currentJobId', currentJobId);
-      }
-    } else {
-      url.search = '';
+      url.searchParams.set('currentJobId', canonicalJobId);
+      return url.toString().replace(/\/$/, '');
     }
+
+    url.search = '';
 
     return url.toString().replace(/\/$/, '');
   } catch {
     return String(value).trim();
   }
+}
+
+function extractLinkedInJobId(url) {
+  const currentJobId = String(url.searchParams.get('currentJobId') ?? '').trim();
+  if (/^\d+$/.test(currentJobId)) {
+    return currentJobId;
+  }
+
+  const viewMatch = url.pathname.match(/\/jobs\/view\/(\d+)/i);
+  if (viewMatch?.[1]) {
+    return viewMatch[1];
+  }
+
+  return null;
 }
