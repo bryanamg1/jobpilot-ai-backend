@@ -43,12 +43,15 @@ export function createOpenAiEnrichmentService(options = {}) {
         return disabledResult('client_unavailable', 'El cliente de OpenAI no esta disponible.');
       }
 
+      let attemptCount = 0;
       try {
         const response = await executeProviderCall(
           breaker,
           () =>
             retryOperation(
-              () =>
+              (attempt) => {
+                attemptCount = attempt;
+                return (
                 client.responses.parse({
                   model: config.OPENAI_MODEL,
                   reasoning: {
@@ -73,10 +76,13 @@ export function createOpenAiEnrichmentService(options = {}) {
                       ],
                     },
                   ],
-                }),
+                })
+                );
+              },
               {
-                attempts: config.EXTERNAL_RETRY_ATTEMPTS,
+                attempts: config.OPENAI_ENRICHMENT_RETRY_ATTEMPTS,
                 baseDelayMs: config.isTest ? 0 : config.EXTERNAL_RETRY_BASE_DELAY_MS,
+                shouldRetry: shouldRetryOpenAiError,
               },
             ),
         );
@@ -90,6 +96,8 @@ export function createOpenAiEnrichmentService(options = {}) {
           mode: 'hybrid',
           provider: 'openai',
           model: config.OPENAI_MODEL,
+          attemptCount,
+          fallbackReason: null,
           warnings: [],
           extracted: response.output_parsed,
         };
@@ -99,6 +107,8 @@ export function createOpenAiEnrichmentService(options = {}) {
           mode: 'deterministic',
           provider: 'openai',
           model: config.OPENAI_MODEL,
+          attemptCount: attemptCount || attemptCountFromError(error),
+          fallbackReason: detectFallbackReason(error),
           warnings: [formatError(error)],
           extracted: null,
         };
@@ -122,7 +132,8 @@ function createClient(config) {
 
   return new OpenAI({
     apiKey: config.OPENAI_API_KEY,
-    timeout: config.OPENAI_TIMEOUT_MS,
+    timeout: config.OPENAI_ENRICHMENT_TIMEOUT_MS ?? config.OPENAI_TIMEOUT_MS,
+    maxRetries: config.OPENAI_MAX_RETRIES,
   });
 }
 
@@ -132,6 +143,8 @@ function disabledResult(code, message) {
     mode: 'deterministic',
     provider: 'openai',
     model: null,
+    attemptCount: 0,
+    fallbackReason: code,
     warnings: [`${code}: ${message}`],
     extracted: null,
   };
@@ -141,6 +154,35 @@ function formatError(error) {
   const name = error?.name ?? 'Error';
   const message = error?.message ?? 'Error desconocido de OpenAI';
   return `openai_error:${name}:${message}`;
+}
+
+function detectFallbackReason(error) {
+  const name = String(error?.name ?? '').trim();
+  const message = String(error?.message ?? '').trim().toLowerCase();
+  const status = Number(error?.status ?? 0);
+
+  if (name === 'APIConnectionTimeoutError' || message.includes('timed out')) {
+    return 'timeout';
+  }
+  if (status === 429 || error?.code === 'rate_limit_exceeded') {
+    return 'rate_limited';
+  }
+  if (status >= 500) {
+    return 'provider_error';
+  }
+  return 'provider_failed';
+}
+
+function attemptCountFromError(error) {
+  return Number(error?.attemptCount ?? 1) || 1;
+}
+
+function shouldRetryOpenAiError(error, attempt) {
+  const status = Number(error?.status ?? 0);
+  if (attempt >= 2) {
+    return false;
+  }
+  return status === 429 || status >= 500;
 }
 
 function buildUserPrompt(input, deterministicParse) {

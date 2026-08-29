@@ -29,7 +29,7 @@ export const aiJobExtractionSchema = z
     recruiterEmail: z.string().nullable(),
     modality: z.array(z.enum(['remote', 'hybrid', 'onsite'])).default([]),
     seniority: z.enum(['junior', 'mid', 'senior', 'lead', 'unknown']).default('unknown'),
-    englishRequirement: z.enum(['basic', 'intermediate', 'advanced', 'unknown']).default('unknown'),
+    englishRequirement: z.enum(['basic', 'intermediate', 'fluent', 'advanced', 'unknown']).default('unknown'),
     technologies: z.array(z.string()).default([]),
     requirements: z.array(z.string()).max(12).default([]),
     instructions: z.array(z.string()).max(12).default([]),

@@ -57,6 +57,8 @@ export function matchJobOffer(profile, parsedOffer, guardrails) {
         ...missingTechnologies.map((tech) => userFacingText.matching.technologyMissing(tech)),
         parsedOffer.jobOffer.englishRequirement === 'advanced'
           ? userFacingText.matching.advancedEnglishGap
+          : parsedOffer.jobOffer.englishRequirement === 'fluent'
+            ? userFacingText.matching.fluentEnglishGap
           : null,
         parsedOffer.jobOffer.seniority === 'senior'
           ? userFacingText.matching.seniorityGap
@@ -103,6 +105,9 @@ function computeLanguageScore(level) {
   }
   if (level === 'intermediate') {
     return matchingRules.weights.language * 0.6;
+  }
+  if (level === 'fluent') {
+    return matchingRules.weights.language * 0.3;
   }
   return 0;
 }
@@ -161,7 +166,7 @@ function selectStatus(score, parsedOffer, guardrails, excludedByRules) {
     return JOB_STATUS.AWAITING_APPROVAL;
   }
 
-  return JOB_STATUS.REJECTED_BY_RULES;
+  return JOB_STATUS.REJECTED;
 }
 
 function dedupeTechnologies(values = []) {

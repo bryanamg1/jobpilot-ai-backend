@@ -22,6 +22,7 @@ const sampleJobAnalysis = {
     ],
   },
   match: {
+    status: 'AWAITING_APPROVAL',
     matchedTechnologies: ['Node.js', 'Express', 'MySQL'],
     approvals: [{ field: 'salary', reason: 'El salario es un dato sensible y requiere aprobacion manual.' }],
     excludedByRules: [],
@@ -124,5 +125,76 @@ describe('openAiDraftService', () => {
     expect(draft.generation.mode).toBe('hybrid');
     expect(draft.subject).toContain('Postulacion para Backend Developer');
     expect(client.responses.parse).toHaveBeenCalledTimes(1);
+  });
+
+  it('no invoca OpenAI para vacantes ya rechazadas', async () => {
+    const client = {
+      responses: {
+        parse: vi.fn(),
+      },
+    };
+    const service = createOpenAiDraftService({
+      client,
+      config: {
+        OPENAI_FEATURE_MODE: 'assist',
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_MODEL: 'gpt-5',
+        OPENAI_REASONING_EFFORT: 'low',
+        OPENAI_TEXT_VERBOSITY: 'medium',
+        OPENAI_TIMEOUT_MS: 20_000,
+      },
+    });
+
+    const draft = await service.generateDraft({
+      ...sampleJobAnalysis,
+      match: {
+        ...sampleJobAnalysis.match,
+        status: 'REJECTED',
+      },
+    });
+
+    expect(draft.status).toBe('BLOCKED');
+    expect(draft.generation.fallbackReason).toBe('not_recommended');
+    expect(draft.subject).toBeNull();
+    expect(client.responses.parse).not.toHaveBeenCalled();
+  });
+
+  it('expone metadatos utiles cuando el proveedor falla rapido', async () => {
+    const client = {
+      responses: {
+        parse: vi.fn().mockRejectedValue(
+          Object.assign(new Error('Bad request'), {
+            name: 'BadRequestError',
+            status: 400,
+            code: 'invalid_request_error',
+          }),
+        ),
+      },
+    };
+    const service = createOpenAiDraftService({
+      client,
+      config: {
+        OPENAI_FEATURE_MODE: 'assist',
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_MODEL: 'gpt-5',
+        OPENAI_REASONING_EFFORT: 'low',
+        OPENAI_TEXT_VERBOSITY: 'medium',
+        OPENAI_DRAFT_RETRY_ATTEMPTS: 1,
+        OPENAI_TIMEOUT_MS: 20_000,
+      },
+    });
+
+    const draft = await service.generateDraft(sampleJobAnalysis, {
+      candidateProfile: defaultCandidateProfile,
+    });
+
+    expect(draft.generation.mode).toBe('deterministic');
+    expect(draft.generation.fallbackReason).toBe('validation_error');
+    expect(draft.generation.error).toEqual({
+      name: 'BadRequestError',
+      code: 'invalid_request_error',
+      providerStatus: 400,
+      failureType: 'validation_error',
+    });
   });
 });

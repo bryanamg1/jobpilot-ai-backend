@@ -32,36 +32,79 @@ function createPageMock(url = 'https://www.linkedin.com/jobs/view/12345') {
     on: vi.fn(),
     locator: vi.fn((selector) => getLocator(selector)),
     waitForFunction: vi.fn(async () => ({})),
-    evaluate: vi.fn(async () => ({
-      title: 'Backend Developer | LinkedIn',
-      url,
-      visibleText:
-        'Backend Developer Acme Labs Remote LATAM Node.js Express MySQL Jest English B2 This description is intentionally long enough to satisfy the supervised capture threshold and mimic a visible LinkedIn Jobs detail page.',
-      selectors: {
-        h1: 'Backend Developer',
-        titleCandidates: ['Backend Developer'],
-        companyCandidates: ['Acme Labs'],
-        metadataItems: ['Remote', 'LATAM', 'Full-time', 'Junior', '34 applicants'],
-        description:
-          'We are hiring a Backend Developer with Node.js, Express, MySQL and Jest. English B2 is required.',
-        descriptionBlocks: [
-          'Requirements: Node.js, Express, MySQL, Jest.',
-          'Responsibilities: Build backend services and APIs.',
-        ],
-        recruiter: 'Jane Recruiter',
-        ariaLabels: ['Node.js', 'Express', 'MySQL', 'Jest', 'English B2'],
-        applyButtons: ['Easy Apply'],
-      },
-      jsonLd: {
-        title: 'Backend Developer',
-        company: 'Acme Labs',
-        location: 'Remote',
-        employmentType: 'FULL_TIME',
-        datePosted: '2026-08-01',
-        description:
-          'We are hiring a Backend Developer with Node.js, Express, MySQL and Jest. English B2 is required.',
-      },
-    })),
+    evaluate: vi.fn(async (fn) => {
+      if (fn?.name === 'inspectLinkedInJobDomInPage') {
+        return {
+          mainFound: true,
+          bodyTextLength: 6800,
+          iframeCount: 0,
+          roleMainCount: 1,
+          roleArticleCount: 0,
+          visibleSectionCount: 2,
+          attemptedStrategies: [
+            'semantic_aria_details',
+            'attribute_current_job',
+            'semantic_detail_panel',
+            'class_support',
+            'right_panel_fallback',
+          ],
+          candidateCount: 1,
+          candidates: [
+            {
+              cssPath: 'main > section:nth-of-type(2) > div',
+              strategy: 'semantic_detail_panel',
+              tag: 'DIV',
+              role: 'region',
+              className: 'detail-panel surface',
+              textLength: descriptionText.length,
+              visible: true,
+              depth: 2,
+            },
+          ],
+          selectedCandidate: {
+            cssPath: 'main > section:nth-of-type(2) > div',
+            strategy: 'semantic_detail_panel',
+            tag: 'DIV',
+            role: 'region',
+            className: 'detail-panel surface',
+            textLength: descriptionText.length,
+            visible: true,
+            depth: 2,
+          },
+        };
+      }
+
+      return {
+        title: 'Backend Developer | LinkedIn',
+        url,
+        visibleText:
+          'Backend Developer Acme Labs Remote LATAM Node.js Express MySQL Jest English B2 This description is intentionally long enough to satisfy the supervised capture threshold and mimic a visible LinkedIn Jobs detail page.',
+        selectors: {
+          h1: 'Backend Developer',
+          titleCandidates: ['Backend Developer'],
+          companyCandidates: ['Acme Labs'],
+          metadataItems: ['Remote', 'LATAM', 'Full-time', 'Junior', '34 applicants'],
+          description:
+            'We are hiring a Backend Developer with Node.js, Express, MySQL and Jest. English B2 is required.',
+          descriptionBlocks: [
+            'Requirements: Node.js, Express, MySQL, Jest.',
+            'Responsibilities: Build backend services and APIs.',
+          ],
+          recruiter: 'Jane Recruiter',
+          ariaLabels: ['Node.js', 'Express', 'MySQL', 'Jest', 'English B2'],
+          applyButtons: ['Easy Apply'],
+        },
+        jsonLd: {
+          title: 'Backend Developer',
+          company: 'Acme Labs',
+          location: 'Remote',
+          employmentType: 'FULL_TIME',
+          datePosted: '2026-08-01',
+          description:
+            'We are hiring a Backend Developer with Node.js, Express, MySQL and Jest. English B2 is required.',
+        },
+      };
+    }),
   };
 }
 
