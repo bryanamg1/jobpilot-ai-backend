@@ -149,6 +149,13 @@ We are hiring a Backend Engineer with Node.js, SQL, APIs, observability, testing
     expect(result.jobOffer.title).toBe('Backend Engineer (Node.js, SQL)');
     expect(result.jobOffer.company).toBe('Sundayy');
     expect(result.analysis.extraction.mode).toBe('deterministic');
+    expect(result.match.recommendationBreakdown).toEqual(
+      expect.objectContaining({
+        decision: expect.any(String),
+        confidence: expect.any(String),
+        suggestedActions: expect.any(Array),
+      }),
+    );
   });
 
   it('mantiene enrichment habilitado para entradas manuales no supervisadas', async () => {

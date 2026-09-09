@@ -6,6 +6,7 @@ import { evaluateGuardrails } from '../guardrails/guardrailService.js';
 import { matchJobOffer } from '../matching/matchJobOffer.js';
 import { normalizeTechnology, parseManualJob } from '../manualIntake/manualJobParser.js';
 import { createOpenAiEnrichmentService } from '../openai/openAiEnrichmentService.js';
+import { recommendJobOffer } from '../recommendations/recommendationEngine.js';
 
 export function createJobOfferService(repository, auditService, options = {}) {
   const openAiEnrichmentService =
@@ -139,7 +140,20 @@ export function createJobOfferService(repository, auditService, options = {}) {
 
         const matchingStartedAt = Date.now();
         const guardrails = evaluateGuardrails(parsed, profile);
-        const match = matchJobOffer(profile, parsed, guardrails);
+        const baseMatch = matchJobOffer(profile, parsed, guardrails);
+        const recommendationDecision = recommendJobOffer({
+          candidateProfile: profile,
+          structuredJob: parsed,
+          guardrailResult: guardrails,
+          matchingResult: baseMatch,
+        });
+        const match = {
+          ...baseMatch,
+          recommendation: recommendationDecision.recommendation,
+          status: recommendationDecision.status,
+          suggestedActions: recommendationDecision.suggestedActions,
+          recommendationBreakdown: recommendationDecision.recommendationBreakdown,
+        };
         summary.matchScore = match.score;
         summary.recommendation = match.recommendation ?? null;
         summary.blockedRules = guardrails.blocked.length;
@@ -149,6 +163,8 @@ export function createJobOfferService(repository, auditService, options = {}) {
           sourceUrl: input.sourceUrl ?? null,
           score: match.score,
           status: match.status,
+          decision: match.recommendationBreakdown?.decision ?? null,
+          confidence: match.recommendationBreakdown?.confidence ?? null,
           approvalsRequired: guardrails.approvals.length,
           blockedRules: guardrails.blocked.length,
           durationMs: Date.now() - matchingStartedAt,
