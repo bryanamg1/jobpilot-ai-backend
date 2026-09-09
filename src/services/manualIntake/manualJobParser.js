@@ -50,6 +50,7 @@ const modalityPatterns = [
 const requirementSectionPatterns = {
   required: [
     /^(requirements?|must have|required|minimum requirements?|minimum qualifications?|qualifications?)\s*:?\s*$/i,
+    /^(requisitos?|excluyentes?|obligatorios?)\s*:?\s*$/i,
   ],
   preferred: [
     /^(preferred qualifications?|nice to have|preferred|bonus points?|plus|desirable)\s*:?\s*$/i,
@@ -60,6 +61,7 @@ const requirementSectionPatterns = {
   benefits: [
     /^(benefits?|perks?|what we offer|why join|why you'?ll love|our offer)\s*:?\s*$/i,
   ],
+  optional: [/^(optional|nice to have|bonus points?|plus|desirable)\s*:?\s*$/i],
 };
 const inlinePreferredPatterns = [
   /\bpreferred qualifications?\b/i,
@@ -71,6 +73,7 @@ const inlinePreferredPatterns = [
   /\bexposure to\b/i,
   /\bdesirable\b/i,
 ];
+const inlineOptionalPatterns = [/\boptional\b/i];
 const inlineRequiredPatterns = [
   /\brequired\b/i,
   /\bmust\b/i,
@@ -78,26 +81,40 @@ const inlineRequiredPatterns = [
   /\byou need\b/i,
   /\bmust have\b/i,
   /\bqualifications?\b/i,
+  /\brequisitos?\b/i,
+  /\bobligatorio\b/i,
+  /\bexcluyente\b/i,
   /\bfluency in english\b/i,
 ];
 const inlineResponsibilityPatterns = [/\bresponsib/i, /\byou will\b/i, /\bwhat you'?ll do\b/i, /\btareas?\b/i];
 const inlineBenefitPatterns = [/\bbenefit\b/i, /\bperk\b/i, /\bwe offer\b/i, /\bwhy join\b/i, /\bour offer\b/i];
 const labelOnlyPatterns = [
   /^requirements?\s*:?\s*$/i,
+  /^requisitos?\s*:?\s*$/i,
   /^responsibilities\s*:?\s*$/i,
   /^benefits?\s*:?\s*$/i,
   /^preferred qualifications?\s*:?\s*$/i,
   /^nice to have\s*:?\s*$/i,
+  /^optional\s*:?\s*$/i,
   /^qualifications?\s*:?\s*$/i,
 ];
 const englishRequirementPatterns = [
   { level: 'advanced', patterns: [/\bc1\b/i, /\bc2\b/i, /\bnative english\b/i, /\badvanced english\b/i] },
-  { level: 'fluent', patterns: [/\bfluent english\b/i, /\bfluency in english\b/i, /\bfluent in english\b/i] },
+  {
+    level: 'fluent',
+    patterns: [
+      /\bb2\b/i,
+      /\bupper[- ]intermediate english\b/i,
+      /\bfluent english\b/i,
+      /\bfluency in english\b/i,
+      /\bfluent in english\b/i,
+    ],
+  },
   {
     level: 'intermediate',
-    patterns: [/\bb2\b/i, /\bintermediate english\b/i, /\bupper[- ]intermediate english\b/i],
+    patterns: [/\bb1\b/i, /\bintermediate english\b/i, /\bconversational english\b/i],
   },
-  { level: 'basic', patterns: [/\bb1\b/i, /\bbasic english\b/i, /\bconversational english\b/i] },
+  { level: 'basic', patterns: [/\ba1\b/i, /\ba2\b/i, /\bbasic english\b/i] },
 ];
 
 export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType, structuredJob }) {
@@ -465,14 +482,15 @@ function buildStructuredSections({ analysisLines, structuredHints }) {
 
   let currentSection = 'general';
   for (const line of analysisLines) {
-    const cleaned = cleanRequirementLikeText(line);
-    if (!cleaned) {
+    const headingCandidate = cleanScalar(line);
+    const sectionType = headingCandidate ? classifySectionHeading(headingCandidate) : null;
+    if (sectionType) {
+      currentSection = sectionType;
       continue;
     }
 
-    const sectionType = classifySectionHeading(cleaned);
-    if (sectionType) {
-      currentSection = sectionType;
+    const cleaned = cleanRequirementLikeText(line);
+    if (!cleaned) {
       continue;
     }
 
@@ -524,11 +542,17 @@ function isLabelOnly(line) {
 }
 
 function inferRequirementLevel(line, currentSection) {
+  if (currentSection === 'optional') {
+    return 'optional';
+  }
   if (currentSection === 'preferred') {
     return 'preferred';
   }
   if (currentSection === 'required') {
     return 'required';
+  }
+  if (inlineOptionalPatterns.some((pattern) => pattern.test(line))) {
+    return 'optional';
   }
   if (inlinePreferredPatterns.some((pattern) => pattern.test(line))) {
     return 'preferred';
@@ -601,6 +625,7 @@ function buildTechnologyClaims(requirementItems) {
       claims.push({
         technology,
         requirementLevel: item.level,
+        certainty: CERTAINTY.INFERRED,
         relationship,
         alternativeGroup,
         evidence: item.text,

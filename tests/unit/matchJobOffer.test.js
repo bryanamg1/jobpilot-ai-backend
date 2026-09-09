@@ -23,6 +23,12 @@ describe('matchJobOffer', () => {
     expect(match.status).toBe('AWAITING_APPROVAL');
     expect(match.explanation.risks).toContain('El salario es un dato sensible y requiere aprobacion manual.');
     expect(match.matchedTechnologies).toContain('Node.js');
+    expect(match.matchBreakdown.scoreComponents.technologyScore).toBeGreaterThan(0);
+    expect(match.matchBreakdown.strengths).toEqual(
+      expect.arrayContaining([
+        'Node.js esta confirmado en el perfil del candidato.',
+      ]),
+    );
   });
 
   it('blocks incompatible offers with prohibited requirements', () => {
@@ -94,6 +100,105 @@ Apply here.
     expect(normalizeTechnology('NodeJS')).toBe('Node.js');
     expect(normalizeTechnology('ReactJS')).toBe('React');
     expect(normalizeTechnology('Express.js')).toBe('Express');
+  });
+
+  it('penaliza AWS preferred sin bloquear la vacante', () => {
+    const parsed = parseManualJob({
+      rawText: [
+        'Backend Developer',
+        'Requirements',
+        'Node.js is required for this role.',
+        'Preferred Qualifications',
+        'Familiarity with AWS',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/aws-preferred',
+      sourceLabel: 'Manual',
+    });
+    const guardrails = evaluateGuardrails(parsed, defaultCandidateProfile);
+    const match = matchJobOffer(defaultCandidateProfile, parsed, guardrails);
+
+    expect(guardrails.blocked.some((entry) => entry.field === 'technologyClaims')).toBe(false);
+    expect(match.matchBreakdown.preferredMissing).toEqual(
+      expect.arrayContaining([
+        'AWS aparece como requisito deseable y no esta confirmado en el perfil.',
+      ]),
+    );
+    expect(match.excludedByRules).toHaveLength(0);
+  });
+
+  it('bloquea AWS required cuando no esta confirmado', () => {
+    const parsed = parseManualJob({
+      rawText: ['Backend Developer', 'Requirements', 'AWS is required for this role.'].join('\n'),
+      sourceUrl: 'https://example.com/aws-required',
+      sourceLabel: 'Manual',
+    });
+    const guardrails = evaluateGuardrails(parsed, defaultCandidateProfile);
+    const match = matchJobOffer(defaultCandidateProfile, parsed, guardrails);
+
+    expect(match.status).toBe('REJECTED_BY_RULES');
+    expect(match.matchBreakdown.blockers).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('aws experience'),
+      ]),
+    );
+  });
+
+  it('treats satisfied technology alternatives as a single matched unit', () => {
+    const parsed = parseManualJob({
+      rawText: [
+        'Backend Developer',
+        'Requirements',
+        'Experience with Node.js/Python/Java is required.',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/alternatives',
+      sourceLabel: 'Manual',
+    });
+    const guardrails = evaluateGuardrails(parsed, defaultCandidateProfile);
+    const match = matchJobOffer(defaultCandidateProfile, parsed, guardrails);
+
+    expect(match.matchBreakdown.technologyUnits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relationship: 'alternative',
+          requirementLevel: 'required',
+          technologies: expect.arrayContaining(['Node.js', 'Python', 'Java']),
+        }),
+      ]),
+    );
+    expect(match.matchedTechnologies).toContain('Node.js');
+    expect(match.missingTechnologies).not.toEqual(expect.arrayContaining(['Python', 'Java']));
+  });
+
+  it('uses CONDITIONAL with traceable reasons for junior-compatible low confidence roles', () => {
+    const parsed = {
+      source: {
+        originalText: 'Junior Backend Developer. Remote. Go services.',
+      },
+      jobOffer: {
+        title: 'Backend Developer',
+        company: 'Unknown Co',
+        location: 'Remote',
+        modality: ['remote'],
+        seniority: 'junior',
+        englishRequirement: 'intermediate',
+        technologies: ['Go'],
+        technologyClaims: [],
+        salary: null,
+        flags: {
+          asksForSalary: false,
+        },
+      },
+    };
+    const guardrails = { approvals: [], blocked: [] };
+    const match = matchJobOffer(defaultCandidateProfile, parsed, guardrails);
+
+    expect(match.recommendation).toBe('CONDITIONAL');
+    expect(match.status).toBe('AWAITING_APPROVAL');
+    expect(match.matchBreakdown.optionalMissing).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Go'),
+      ]),
+    );
   });
 });
 

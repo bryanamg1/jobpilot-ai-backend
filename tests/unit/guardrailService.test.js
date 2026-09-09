@@ -82,4 +82,45 @@ describe('guardrailService', () => {
       ]),
     );
   });
+
+  it('does not require approval when intermediate English matches candidate B1', () => {
+    const parsed = buildParsedOffer({
+      description: ['Requirements', 'Intermediate English required'].join('\n'),
+      technologies: ['Node.js'],
+    });
+
+    const result = evaluateGuardrails(parsed, defaultCandidateProfile);
+
+    expect(result.approvals.some((entry) => entry.field === 'englishLevel')).toBe(false);
+    expect(result.blocked.some((entry) => entry.field === 'englishRequirement')).toBe(false);
+  });
+
+  it('requires approval for B2 or fluent English with candidate B1', () => {
+    const parsed = buildParsedOffer({
+      description: ['Requirements', 'B2 English required'].join('\n'),
+      technologies: ['Node.js'],
+    });
+
+    const result = evaluateGuardrails(parsed, defaultCandidateProfile);
+
+    expect(result.approvals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'englishLevel',
+        }),
+      ]),
+    );
+    expect(result.blocked.some((entry) => entry.field === 'englishRequirement')).toBe(false);
+  });
+
+  it('does not block preferred years of experience', () => {
+    const parsed = buildParsedOffer({
+      description: ['Preferred Qualifications', '2-3 years preferred with Node.js'].join('\n'),
+      technologies: ['Node.js'],
+    });
+
+    const result = evaluateGuardrails(parsed, defaultCandidateProfile);
+
+    expect(result.blocked.some((entry) => entry.field === 'yearsOfExperience')).toBe(false);
+  });
 });

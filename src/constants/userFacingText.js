@@ -66,6 +66,12 @@ export const userFacingText = {
     roleAligned: 'El rol se alinea con las posiciones objetivo del perfil.',
     technologyMissing: (technology) =>
       `${technology} no esta confirmado en el perfil.`,
+    requiredTechnologyMissing: (technology) =>
+      `${technology} aparece como requisito obligatorio y no esta confirmado en el perfil.`,
+    preferredTechnologyMissing: (technology) =>
+      `${technology} aparece como requisito deseable y no esta confirmado en el perfil.`,
+    optionalTechnologyMissing: (technology) =>
+      `${technology} aparece como tecnologia opcional o mencionada y no esta confirmado en el perfil.`,
     advancedEnglishGap:
       'El requisito de ingles avanzado supera el nivel B1 confirmado.',
     fluentEnglishGap:
