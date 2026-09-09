@@ -141,6 +141,34 @@ describe('manualJobParser', () => {
     expect(c1.jobOffer.englishRequirement).toBe('advanced');
   });
 
+  it('maps CEFR English levels consistently without treating B1 as basic', () => {
+    const b1 = parseManualJob({
+      rawText: 'B1 English required',
+      sourceUrl: 'https://example.com/b1',
+      sourceLabel: 'Manual',
+    });
+    const conversational = parseManualJob({
+      rawText: 'Conversational English required',
+      sourceUrl: 'https://example.com/conversational',
+      sourceLabel: 'Manual',
+    });
+    const b2 = parseManualJob({
+      rawText: 'B2 English required',
+      sourceUrl: 'https://example.com/b2',
+      sourceLabel: 'Manual',
+    });
+    const basic = parseManualJob({
+      rawText: 'Basic English required',
+      sourceUrl: 'https://example.com/basic',
+      sourceLabel: 'Manual',
+    });
+
+    expect(b1.jobOffer.englishRequirement).toBe('intermediate');
+    expect(conversational.jobOffer.englishRequirement).toBe('intermediate');
+    expect(b2.jobOffer.englishRequirement).toBe('fluent');
+    expect(basic.jobOffer.englishRequirement).toBe('basic');
+  });
+
   it('classifies preferred and alternative technology requirements without copying the whole description', () => {
     const parsed = parseManualJob({
       rawText: [
@@ -183,8 +211,11 @@ describe('manualJobParser', () => {
         'AWS is required for this role.',
       ]),
     );
-    expect(parsed.jobOffer.preferredRequirements).toEqual(['Familiarity with AWS and Docker']);
-    expect(parsed.jobOffer.benefits).toEqual([]);
+    expect(parsed.jobOffer.preferredRequirements).toEqual([
+      'Familiarity with AWS and Docker',
+      'Experience in programming languages such as PHP, Python, Java, etc.',
+    ]);
+    expect(parsed.jobOffer.benefits).toEqual(['Remote-first team and learning budget']);
     expect(parsed.jobOffer.requirements).not.toContain('Requirements');
     expect(parsed.jobOffer.requirements.join(' ')).not.toContain('Preferred Qualifications');
     expect(parsed.jobOffer.technologyClaims).toEqual(
@@ -192,22 +223,48 @@ describe('manualJobParser', () => {
         expect.objectContaining({
           technology: 'AWS',
           requirementLevel: 'required',
+          certainty: 'INFERRED',
           relationship: 'all',
         }),
         expect.objectContaining({
           technology: 'PHP',
-          requirementLevel: 'optional',
+          requirementLevel: 'preferred',
           relationship: 'alternative',
         }),
         expect.objectContaining({
           technology: 'Python',
-          requirementLevel: 'optional',
+          requirementLevel: 'preferred',
           relationship: 'alternative',
         }),
         expect.objectContaining({
           technology: 'Java',
-          requirementLevel: 'optional',
+          requirementLevel: 'preferred',
           relationship: 'alternative',
+        }),
+      ]),
+    );
+  });
+
+  it('classifies optional technologies without converting them into required claims', () => {
+    const parsed = parseManualJob({
+      rawText: [
+        'Backend Developer',
+        'Requirements',
+        'Node.js is required for this role.',
+        'Optional',
+        'Docker nice to have',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/optional-tech',
+      sourceLabel: 'Manual',
+    });
+
+    expect(parsed.jobOffer.requirements).toContain('Node.js is required for this role.');
+    expect(parsed.jobOffer.optionalRequirements).toContain('Docker nice to have');
+    expect(parsed.jobOffer.technologyClaims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          technology: 'Docker',
+          requirementLevel: 'optional',
         }),
       ]),
     );
