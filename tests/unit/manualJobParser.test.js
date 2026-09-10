@@ -455,4 +455,113 @@ describe('manualJobParser', () => {
     expect(b2.jobOffer.englishRequirement).toBe('fluent');
     expect(c1.jobOffer.englishRequirement).toBe('advanced');
   });
+
+  it('infers middle seniority from the title without treating responsibility verbs as lead seniority', () => {
+    const middle = parseManualJob({
+      rawText: [
+        'Middle Node.js Engineer',
+        'Responsibilities: Lead the migration from a legacy service to Node.js.',
+        'Requirements: Node.js is required.',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/avenga-middle',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+      sourceType: 'LINKEDIN_JOBS_SUPERVISED',
+      structuredJob: {
+        title: 'Middle Node.js Engineer',
+        company: 'Avenga',
+        description: [
+          'Responsibilities: Lead the migration from a legacy service to Node.js.',
+          'Requirements: Node.js is required.',
+        ].join('\n'),
+      },
+    });
+    const middleStrong = parseManualJob({
+      rawText: [
+        'Middle-Strong Node.js Engineer',
+        'Responsibilities: Lead the migration from a legacy service to Node.js.',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/avenga-middle-strong',
+      sourceLabel: 'Manual',
+    });
+
+    expect(middle.jobOffer.seniority).toBe('mid');
+    expect(middleStrong.jobOffer.seniority).toBe('mid');
+  });
+
+  it('canonicalizes duplicated Avenga-style sections into one effective requirement per evidence', () => {
+    const description = [
+      'Responsibilities: Lead the migration from legacy services.',
+      'Requirements: 5+ years of experience with Node.js.',
+      'Requirements: AWS is required for cloud services.',
+      'Benefits: Remote work and learning budget.',
+    ].join(' ');
+    const duplicatedText = [
+      'Middle Node.js Engineer',
+      `Responsibilities: ${description}`,
+      `Requirements: ${description}`,
+      `Benefits: ${description}`,
+      `Description: ${description}`,
+    ].join('\n');
+
+    const parsed = parseManualJob({
+      rawText: duplicatedText,
+      sourceUrl: 'https://example.com/avenga-duplicated',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+    });
+
+    const requirementKeys = parsed.jobOffer.requirementItems.map((item) => `${item.requirementLevel}:${item.text}`);
+    const claimKeys = parsed.jobOffer.technologyClaims.map(
+      (claim) => `${claim.technology}:${claim.requirementLevel}:${claim.evidence}`,
+    );
+
+    expect(requirementKeys).toHaveLength(new Set(requirementKeys).size);
+    expect(claimKeys).toHaveLength(new Set(claimKeys).size);
+    expect(parsed.jobOffer.requirements.filter((item) => item === '5+ years of experience with Node.js.')).toHaveLength(1);
+    expect(parsed.jobOffer.requirements.filter((item) => item === 'AWS is required for cloud services.')).toHaveLength(1);
+    expect(parsed.jobOffer.optionalRequirements).not.toContain('5+ years of experience with Node.js.');
+    expect(parsed.jobOffer.optionalRequirements).not.toContain('AWS is required for cloud services.');
+  });
+
+  it('resolves requirement level conflicts by keeping the strongest level for equivalent evidence', () => {
+    const parsed = parseManualJob({
+      rawText: [
+        'Backend Developer',
+        'Optional: AWS is required for cloud services.',
+        'Preferred: AWS is required for cloud services.',
+        'Requirements: AWS is required for cloud services.',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/conflicting-levels',
+      sourceLabel: 'Manual',
+    });
+
+    expect(parsed.jobOffer.requirements).toEqual(['AWS is required for cloud services.']);
+    expect(parsed.jobOffer.preferredRequirements).toEqual([]);
+    expect(parsed.jobOffer.optionalRequirements).toEqual([]);
+    expect(parsed.jobOffer.technologyClaims.filter((claim) => claim.technology === 'AWS')).toEqual([
+      expect.objectContaining({
+        requirementLevel: 'required',
+        evidence: 'AWS is required for cloud services.',
+      }),
+    ]);
+  });
+
+  it('does not create an explicit JavaScript claim when only Node.js is present', () => {
+    const parsed = parseManualJob({
+      rawText: [
+        'Middle Node.js Engineer',
+        'Requirements: Node.js is required for backend services.',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/node-only',
+      sourceLabel: 'Manual',
+    });
+
+    expect(parsed.jobOffer.technologies).toContain('Node.js');
+    expect(parsed.jobOffer.technologyClaims).toEqual([
+      expect.objectContaining({
+        technology: 'Node.js',
+        requirementLevel: 'required',
+      }),
+    ]);
+    expect(parsed.jobOffer.technologyClaims.some((claim) => claim.technology === 'JavaScript')).toBe(false);
+  });
 });

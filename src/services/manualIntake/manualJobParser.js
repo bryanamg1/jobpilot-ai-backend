@@ -83,6 +83,9 @@ const inlineSectionHeadings = [
   { section: 'required', label: 'Requirements' },
   { section: 'required', label: 'Qualifications' },
   { section: 'required', label: 'Requisitos' },
+  { section: 'general', label: 'Description' },
+  { section: 'general', label: 'Descripcion' },
+  { section: 'general', label: 'Descripción' },
   { section: 'preferred', label: 'Preferred Qualifications' },
   { section: 'preferred', label: 'Nice-to-have' },
   { section: 'preferred', label: 'Nice to have' },
@@ -140,6 +143,8 @@ const inlineBenefitPatterns = [/\bbenefit\b/i, /\bperk\b/i, /\bwe offer\b/i, /\b
 const labelOnlyPatterns = [
   /^requirements?\s*:?\s*$/i,
   /^requisitos?\s*:?\s*$/i,
+  /^description\s*:?\s*$/i,
+  /^descripci[oó]n\s*:?\s*$/i,
   /^perfil requerido\s*:?\s*$/i,
   /^responsibilities\s*:?\s*$/i,
   /^responsabilidades\s*:?\s*$/i,
@@ -193,7 +198,10 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType, st
   const technologies = structuredHints.technologies.length
     ? structuredHints.technologies
     : extractTechnologies(lowerText);
-  const seniority = chooseKnownValue(structuredHints.seniority, extractSeniority(lowerText));
+  const seniority = chooseKnownValue(
+    structuredHints.seniority,
+    extractSeniorityFromMetadata({ title, lines: titleCandidateLines }),
+  );
   const englishRequirement = extractEnglishRequirement(lowerText);
   const modality = structuredHints.modality.length ? structuredHints.modality : extractModality(lowerText);
   const salary = extractSalary(rawText);
@@ -379,20 +387,29 @@ export function normalizeTechnology(term) {
   return cleanScalar(term) ?? term;
 }
 
-function extractSeniority(text) {
-  if (/(lead|staff|principal)/i.test(text)) {
+function extractSeniorityFromMetadata({ title, lines }) {
+  const labeledSeniority = extractField(lines, ['seniority', 'seniority level', 'nivel', 'nivel de seniority']);
+  return normalizeSeniority(labeledSeniority) ?? normalizeSeniority(title) ?? 'unknown';
+}
+
+function normalizeSeniority(text) {
+  const value = String(text ?? '').toLowerCase();
+  if (!value) {
+    return null;
+  }
+  if (/\b(lead|staff|principal)\b/i.test(value)) {
     return 'lead';
   }
-  if (/(senior|sr\.)/i.test(text)) {
+  if (/\b(senior|sr\.?)\b/i.test(value)) {
     return 'senior';
   }
-  if (/(semi.?senior|mid|ssr)/i.test(text)) {
+  if (/\b(middle(?:-strong)?|semi[- ]?senior|mid|ssr)\b/i.test(value)) {
     return 'mid';
   }
-  if (/(junior|jr\.)/i.test(text)) {
+  if (/\b(junior|jr\.?)\b/i.test(value)) {
     return 'junior';
   }
-  return 'unknown';
+  return null;
 }
 
 function extractEnglishRequirement(text) {
@@ -466,6 +483,9 @@ function extractTechnologies(text) {
 
 function hasWholeTerm(text, value) {
   const escaped = escapeRegExp(value).replaceAll('\\ ', '\\s+');
+  if (['js', 'ts'].includes(normalizeToken(value))) {
+    return new RegExp(`(^|[^a-z0-9.+#-])${escaped}([^a-z0-9.+#-]|$)`, 'i').test(text);
+  }
   return new RegExp(`(^|[^a-z0-9+#-])${escaped}([^a-z0-9+#-]|$)`, 'i').test(text);
 }
 
@@ -494,7 +514,7 @@ function normalizeStructuredJobHints(structuredJob) {
     company: cleanCompany(structuredJob.company),
     location: cleanScalar(structuredJob.location),
     modality: cleanStringArray(structuredJob.modality),
-    seniority: cleanScalar(structuredJob.seniority),
+    seniority: normalizeSeniority(structuredJob.seniority),
     technologies: cleanStringArray(structuredJob.technologies).map(normalizeTechnology),
     requirements: cleanStringArray(structuredJob.requirements),
     description: cleanMultilineText(structuredJob.description),
@@ -504,14 +524,31 @@ function normalizeStructuredJobHints(structuredJob) {
 }
 
 function buildAnalysisText(rawText, structuredHints) {
-  const prioritized = [
+  const prioritized = dedupeAnalysisSegments([
     structuredHints.description,
     ...structuredHints.requirements,
     ...structuredHints.responsibilities,
     ...structuredHints.benefits,
-  ].filter(Boolean);
+  ]);
 
   return prioritized.length ? prioritized.join('\n') : rawText;
+}
+
+function dedupeAnalysisSegments(values) {
+  const segments = [];
+  const seen = new Set();
+
+  for (const value of values) {
+    const cleaned = cleanMultilineText(value);
+    const key = normalizeEvidenceText(cleaned);
+    if (!cleaned || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    segments.push(cleaned);
+  }
+
+  return segments;
 }
 
 function toLines(text) {
@@ -575,7 +612,7 @@ function buildStructuredSections({ analysisLines, structuredHints }) {
     }
   }
 
-  buckets.requirementItems = dedupeRequirementItems(buckets.requirementItems);
+  buckets.requirementItems = canonicalizeRequirementItems(buckets.requirementItems);
   buckets.requirements = dedupeStrings(buckets.requirementItems.filter((item) => item.level === 'required').map((item) => item.text));
   buckets.preferredRequirements = dedupeStrings(
     buckets.requirementItems.filter((item) => item.level === 'preferred').map((item) => item.text),
@@ -772,11 +809,18 @@ function appendUnique(target, value) {
   }
 }
 
-function dedupeRequirementItems(items) {
-  return items.filter(
-    (entry, index, list) =>
-      index === list.findIndex((candidate) => candidate.text.toLowerCase() === entry.text.toLowerCase() && candidate.level === entry.level),
-  );
+function canonicalizeRequirementItems(items) {
+  const byEvidence = new Map();
+
+  for (const item of items) {
+    const key = normalizeEvidenceText(item.evidence ?? item.text);
+    const current = byEvidence.get(key);
+    if (!current || requirementLevelRank(item.level) > requirementLevelRank(current.level)) {
+      byEvidence.set(key, item);
+    }
+  }
+
+  return [...byEvidence.values()];
 }
 
 function buildTechnologyClaims(requirementItems) {
@@ -803,17 +847,65 @@ function buildTechnologyClaims(requirementItems) {
     }
   }
 
-  return claims.filter(
-    (entry, index, list) =>
-      index ===
+  return canonicalizeTechnologyClaims(claims);
+}
+
+function canonicalizeTechnologyClaims(claims) {
+  const byEvidenceTechnology = new Map();
+
+  for (const claim of claims) {
+    const key = `${normalizeTechnology(claim.technology).toLowerCase()}::${normalizeEvidenceText(claim.evidence)}`;
+    const current = byEvidenceTechnology.get(key);
+    if (!current || requirementLevelRank(claim.requirementLevel) > requirementLevelRank(current.requirementLevel)) {
+      byEvidenceTechnology.set(key, claim);
+    }
+  }
+
+  return [...byEvidenceTechnology.values()].filter((claim, index, list) => {
+    if (isLessSpecificTechnologyClaim(claim, list)) {
+      return false;
+    }
+
+    return index ===
       list.findIndex(
         (candidate) =>
-          candidate.technology === entry.technology &&
-          candidate.requirementLevel === entry.requirementLevel &&
-          candidate.relationship === entry.relationship &&
-          candidate.evidence === entry.evidence,
-      ),
-  );
+          normalizeTechnology(candidate.technology).toLowerCase() === normalizeTechnology(claim.technology).toLowerCase() &&
+          candidate.requirementLevel === claim.requirementLevel &&
+          candidate.relationship === claim.relationship &&
+          normalizeEvidenceText(candidate.evidence) === normalizeEvidenceText(claim.evidence),
+      );
+  });
+}
+
+function isLessSpecificTechnologyClaim(claim, claims) {
+  const claimTechnology = normalizeTechnology(claim.technology);
+  const claimEvidence = normalizeEvidenceText(claim.evidence);
+  return claims.some((candidate) => {
+    const candidateTechnology = normalizeTechnology(candidate.technology);
+    return (
+      candidate !== claim &&
+      normalizeEvidenceText(candidate.evidence) === claimEvidence &&
+      candidateTechnology.toLowerCase() !== claimTechnology.toLowerCase() &&
+      candidateTechnology.toLowerCase().includes(claimTechnology.toLowerCase())
+    );
+  });
+}
+
+function requirementLevelRank(level) {
+  return {
+    mentioned: 1,
+    optional: 2,
+    preferred: 3,
+    required: 4,
+  }[level] ?? 0;
+}
+
+function normalizeEvidenceText(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[.,;:]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function isAlternativeRequirement(text, technologies) {
