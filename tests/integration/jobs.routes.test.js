@@ -267,7 +267,14 @@ describe('jobs routes', () => {
     const app = buildApp();
 
     const createResponse = await request(app).post('/api/v1/jobs/manual').send({
-      rawText: fixture('manual-job-spanish.txt'),
+      rawText: [
+        'Junior Backend Developer - Remote at Acme Labs',
+        'Empresa: Acme Labs',
+        'Ubicacion: Remoto LATAM',
+        'Salario: USD 1200 - 1600',
+        'Requisitos: Node.js, Express, MySQL, Docker, JavaScript y Jest.',
+        'Enviar CV a jobs@acmelabs.com',
+      ].join('\n'),
       sourceUrl: 'https://example.com/backend-job-awaiting-approval',
       sourceLabel: 'Manual dry run approval',
     });
