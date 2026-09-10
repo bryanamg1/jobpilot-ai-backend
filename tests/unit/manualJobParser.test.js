@@ -223,7 +223,7 @@ describe('manualJobParser', () => {
         expect.objectContaining({
           technology: 'AWS',
           requirementLevel: 'required',
-          certainty: 'INFERRED',
+          certainty: 'CONFIRMED',
           relationship: 'all',
         }),
         expect.objectContaining({
@@ -268,5 +268,191 @@ describe('manualJobParser', () => {
         }),
       ]),
     );
+  });
+
+  it('classifies the Azkait-style LinkedIn description into semantic requirements', () => {
+    const description = [
+      'Requisitos: Inglés técnico: Básico - Intermedio.',
+      'A partir de 3 años de experiencia con Node.js y TypeScript.',
+      'Experiencia desarrollando arquitecturas serverless con AWS Lambda.',
+      'Experiencia en proyectos productivos con Next.js o React Native.',
+      'Desarrollo y consumo de APIs REST o GraphQL.',
+      'Manejo de MongoDB o DynamoDB.',
+      'Experiencia con Docker.',
+      'GitFlow.',
+      'Testing con Jest/RTL.',
+      'Responsabilidades: Construir funcionalidades full stack y colaborar con producto.',
+      'Beneficios: Esquema por honorarios 100% remoto.',
+    ].join(' ');
+
+    const parsed = parseManualJob({
+      rawText: [
+        'Full Stack Developer | Azkait',
+        'Company: Azkait',
+        'Description:',
+        description,
+      ].join('\n'),
+      sourceUrl: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4444596852',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+      sourceType: 'LINKEDIN_JOBS_SUPERVISED',
+      structuredJob: {
+        title: 'Full Stack Developer',
+        company: 'Azkait',
+        location: 'Argentina',
+        modality: ['remote'],
+        description,
+      },
+    });
+
+    expect(parsed.jobOffer.englishRequirement).toBe('intermediate');
+    expect(parsed.jobOffer.requirementItems.length).toBeGreaterThan(0);
+    expect(parsed.jobOffer.technologyClaims.length).toBeGreaterThan(0);
+    expect(parsed.jobOffer.requirements).toEqual(
+      expect.arrayContaining([
+        'A partir de 3 años de experiencia con Node.js y TypeScript.',
+        'Experiencia desarrollando arquitecturas serverless con AWS Lambda.',
+        'Experiencia en proyectos productivos con Next.js o React Native.',
+        'Desarrollo y consumo de APIs REST o GraphQL.',
+        'Manejo de MongoDB o DynamoDB.',
+        'Experiencia con Docker.',
+        'Testing con Jest/RTL.',
+      ]),
+    );
+    expect(parsed.jobOffer.benefits).toEqual(['Esquema por honorarios 100% remoto.']);
+    expect(parsed.jobOffer.responsibilities).toEqual([
+      'Construir funcionalidades full stack y colaborar con producto.',
+    ]);
+    expect(parsed.jobOffer.requirements.join(' ')).not.toContain('Esquema por honorarios');
+    expect(parsed.jobOffer.requirementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: 'A partir de 3 años de experiencia con Node.js y TypeScript.',
+          level: 'required',
+          requirementLevel: 'required',
+          certainty: 'CONFIRMED',
+          evidence: 'A partir de 3 años de experiencia con Node.js y TypeScript.',
+          category: 'experience',
+          minYears: 3,
+        }),
+      ]),
+    );
+    expect(parsed.jobOffer.technologyClaims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          technology: 'Node.js',
+          requirementLevel: 'required',
+          certainty: 'CONFIRMED',
+          relationship: 'all',
+          evidence: 'A partir de 3 años de experiencia con Node.js y TypeScript.',
+        }),
+        expect.objectContaining({
+          technology: 'TypeScript',
+          requirementLevel: 'required',
+          relationship: 'all',
+        }),
+        expect.objectContaining({
+          technology: 'AWS Lambda',
+          requirementLevel: 'required',
+        }),
+        expect.objectContaining({
+          technology: 'Docker',
+          requirementLevel: 'required',
+        }),
+      ]),
+    );
+
+    const nextClaim = parsed.jobOffer.technologyClaims.find((claim) => claim.technology === 'Next.js');
+    const reactNativeClaim = parsed.jobOffer.technologyClaims.find((claim) => claim.technology === 'React Native');
+    const restClaim = parsed.jobOffer.technologyClaims.find((claim) => claim.technology === 'REST API');
+    const graphqlClaim = parsed.jobOffer.technologyClaims.find((claim) => claim.technology === 'GraphQL');
+    const mongoClaim = parsed.jobOffer.technologyClaims.find((claim) => claim.technology === 'MongoDB');
+    const dynamoClaim = parsed.jobOffer.technologyClaims.find((claim) => claim.technology === 'DynamoDB');
+
+    expect(nextClaim).toEqual(expect.objectContaining({ relationship: 'alternative' }));
+    expect(reactNativeClaim).toEqual(
+      expect.objectContaining({
+        relationship: 'alternative',
+        alternativeGroup: nextClaim.alternativeGroup,
+      }),
+    );
+    expect(restClaim).toEqual(expect.objectContaining({ relationship: 'alternative' }));
+    expect(graphqlClaim).toEqual(
+      expect.objectContaining({
+        relationship: 'alternative',
+        alternativeGroup: restClaim.alternativeGroup,
+      }),
+    );
+    expect(mongoClaim).toEqual(expect.objectContaining({ relationship: 'alternative' }));
+    expect(dynamoClaim).toEqual(
+      expect.objectContaining({
+        relationship: 'alternative',
+        alternativeGroup: mongoClaim.alternativeGroup,
+      }),
+    );
+  });
+
+  it('detects headings with content in the same line in Spanish and English', () => {
+    const parsed = parseManualJob({
+      rawText: [
+        'Frontend Developer',
+        'Requisitos: Node.js y TypeScript.',
+        'Preferred: 2-3 years preferred with AWS.',
+        'Nice to have: Familiarity with Docker.',
+        'Benefits: Remote work.',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/inline-headings',
+      sourceLabel: 'Manual',
+    });
+
+    expect(parsed.jobOffer.requirements).toContain('Node.js y TypeScript.');
+    expect(parsed.jobOffer.preferredRequirements).toContain('2-3 years preferred with AWS.');
+    expect(parsed.jobOffer.preferredRequirements).toContain('Familiarity with Docker.');
+    expect(parsed.jobOffer.benefits).toEqual(['Remote work.']);
+    expect(parsed.jobOffer.requirementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: '2-3 years preferred with AWS.',
+          requirementLevel: 'preferred',
+          minYears: 2,
+        }),
+      ]),
+    );
+    expect(parsed.jobOffer.technologyClaims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          technology: 'AWS',
+          requirementLevel: 'preferred',
+        }),
+        expect.objectContaining({
+          technology: 'Docker',
+          requirementLevel: 'preferred',
+        }),
+      ]),
+    );
+  });
+
+  it('keeps unsectioned descriptions as mentioned technologies without inventing required claims', () => {
+    const parsed = parseManualJob({
+      rawText: 'We build products with Node.js, TypeScript and MongoDB for global users.',
+      sourceUrl: 'https://example.com/unsectioned',
+      sourceLabel: 'Manual',
+    });
+
+    expect(parsed.jobOffer.technologies).toEqual(
+      expect.arrayContaining(['Node.js', 'TypeScript', 'MongoDB']),
+    );
+    expect(parsed.jobOffer.requirements).toEqual([]);
+    expect(parsed.jobOffer.requirementItems).toEqual([]);
+    expect(parsed.jobOffer.technologyClaims).toEqual([]);
+  });
+
+  it('keeps CEFR English normalization stable for B1, B2 and C1', () => {
+    const b1 = parseManualJob({ rawText: 'English B1 required', sourceUrl: 'https://example.com/b1b', sourceLabel: 'Manual' });
+    const b2 = parseManualJob({ rawText: 'English B2 required', sourceUrl: 'https://example.com/b2b', sourceLabel: 'Manual' });
+    const c1 = parseManualJob({ rawText: 'English C1 required', sourceUrl: 'https://example.com/c1b', sourceLabel: 'Manual' });
+
+    expect(b1.jobOffer.englishRequirement).toBe('intermediate');
+    expect(b2.jobOffer.englishRequirement).toBe('fluent');
+    expect(c1.jobOffer.englishRequirement).toBe('advanced');
   });
 });

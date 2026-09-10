@@ -20,9 +20,17 @@ const technologyAliases = {
   'Socket.io': ['socket.io', 'socket io', 'socketio'],
   PHP: ['php'],
   WordPress: ['wordpress', 'word press'],
+  'AWS Lambda': ['aws lambda', 'lambda'],
   AWS: ['aws', 'amazon web services'],
   GCP: ['gcp', 'google cloud platform', 'google cloud'],
+  DynamoDB: ['dynamodb', 'dynamo db'],
   Terraform: ['terraform'],
+  'Next.js': ['next.js', 'nextjs', 'next js'],
+  'React Native': ['react native', 'react-native'],
+  GraphQL: ['graphql', 'graph ql'],
+  'REST API': ['rest api', 'rest apis', 'apis rest', 'api rest', 'restful', 'rest'],
+  'React Testing Library': ['react testing library', 'rtl'],
+  GitFlow: ['gitflow', 'git flow'],
   Figma: ['figma'],
   Git: ['git'],
   GitHub: ['github', 'git hub'],
@@ -49,29 +57,68 @@ const modalityPatterns = [
 ];
 const requirementSectionPatterns = {
   required: [
-    /^(requirements?|must have|required|minimum requirements?|minimum qualifications?|qualifications?)\s*:?\s*$/i,
-    /^(requisitos?|excluyentes?|obligatorios?)\s*:?\s*$/i,
+    /^(requirements?|must[- ]?have|required|minimum requirements?|minimum qualifications?|qualifications?|what you need|profile required)\s*:?\s*$/i,
+    /^(requisitos?|perfil requerido|excluyentes?|obligatorios?)\s*:?\s*$/i,
   ],
   preferred: [
-    /^(preferred qualifications?|nice to have|preferred|bonus points?|plus|desirable)\s*:?\s*$/i,
+    /^(preferred qualifications?|nice[- ]?to[- ]?have|preferred|bonus points?|bonus|plus)\s*:?\s*$/i,
+    /^(preferidos?|deseables?|ser[aá] un plus|valorado)\s*:?\s*$/i,
   ],
   responsibilities: [
-    /^(responsibilities|what you'?ll do|you will|about the role|role overview)\s*:?\s*$/i,
+    /^(responsibilities|duties|what you'?ll do|you will|about the role|role overview)\s*:?\s*$/i,
+    /^(responsabilidades|tareas|funciones|qu[eé] har[aá]s)\s*:?\s*$/i,
   ],
   benefits: [
     /^(benefits?|perks?|what we offer|why join|why you'?ll love|our offer)\s*:?\s*$/i,
+    /^(beneficios?|ofrecemos|qu[eé] ofrecemos)\s*:?\s*$/i,
   ],
-  optional: [/^(optional|nice to have|bonus points?|plus|desirable)\s*:?\s*$/i],
+  optional: [/^(optional|desirable|opcional)\s*:?\s*$/i],
 };
+const inlineSectionHeadings = [
+  { section: 'required', label: 'Minimum Requirements' },
+  { section: 'required', label: 'Minimum Qualifications' },
+  { section: 'required', label: 'Perfil requerido' },
+  { section: 'required', label: 'What you need' },
+  { section: 'required', label: 'Must have' },
+  { section: 'required', label: 'Requirements' },
+  { section: 'required', label: 'Qualifications' },
+  { section: 'required', label: 'Requisitos' },
+  { section: 'preferred', label: 'Preferred Qualifications' },
+  { section: 'preferred', label: 'Nice-to-have' },
+  { section: 'preferred', label: 'Nice to have' },
+  { section: 'preferred', label: 'Preferidos' },
+  { section: 'preferred', label: 'Deseables' },
+  { section: 'preferred', label: 'Preferred' },
+  { section: 'preferred', label: 'Bonus' },
+  { section: 'preferred', label: 'Plus' },
+  { section: 'optional', label: 'Optional' },
+  { section: 'optional', label: 'Desirable' },
+  { section: 'optional', label: 'Opcional' },
+  { section: 'responsibilities', label: "What you'll do" },
+  { section: 'responsibilities', label: 'Responsibilities' },
+  { section: 'responsibilities', label: 'Duties' },
+  { section: 'responsibilities', label: 'Responsabilidades' },
+  { section: 'responsibilities', label: 'Tareas' },
+  { section: 'benefits', label: 'What we offer' },
+  { section: 'benefits', label: 'Benefits' },
+  { section: 'benefits', label: 'Perks' },
+  { section: 'benefits', label: 'Beneficios' },
+].sort((left, right) => right.label.length - left.label.length);
+const inlineContentHeadingLabels = inlineSectionHeadings.filter(
+  (entry) => !/^(required|preferred|optional|desirable|bonus|plus)$/i.test(entry.label),
+);
 const inlinePreferredPatterns = [
   /\bpreferred qualifications?\b/i,
-  /\bnice to have\b/i,
+  /\bnice[- ]?to[- ]?have\b/i,
   /\bpreferred\b/i,
   /\bbonus\b/i,
   /\bplus\b/i,
   /\bfamiliarity with\b/i,
   /\bexposure to\b/i,
   /\bdesirable\b/i,
+  /\bdeseable\b/i,
+  /\bseria un plus\b/i,
+  /\bser[ií]a un plus\b/i,
 ];
 const inlineOptionalPatterns = [/\boptional\b/i];
 const inlineRequiredPatterns = [
@@ -84,22 +131,28 @@ const inlineRequiredPatterns = [
   /\brequisitos?\b/i,
   /\bobligatorio\b/i,
   /\bexcluyente\b/i,
+  /\ba partir de\s+\d+\s*a[nñ]os\b/i,
+  /\bm[ií]nimo\s+\d+\s*a[nñ]os\b/i,
   /\bfluency in english\b/i,
 ];
 const inlineResponsibilityPatterns = [/\bresponsib/i, /\byou will\b/i, /\bwhat you'?ll do\b/i, /\btareas?\b/i];
-const inlineBenefitPatterns = [/\bbenefit\b/i, /\bperk\b/i, /\bwe offer\b/i, /\bwhy join\b/i, /\bour offer\b/i];
+const inlineBenefitPatterns = [/\bbenefit\b/i, /\bperk\b/i, /\bwe offer\b/i, /\bwhy join\b/i, /\bour offer\b/i, /\bbeneficios?\b/i];
 const labelOnlyPatterns = [
   /^requirements?\s*:?\s*$/i,
   /^requisitos?\s*:?\s*$/i,
+  /^perfil requerido\s*:?\s*$/i,
   /^responsibilities\s*:?\s*$/i,
+  /^responsabilidades\s*:?\s*$/i,
   /^benefits?\s*:?\s*$/i,
+  /^beneficios?\s*:?\s*$/i,
   /^preferred qualifications?\s*:?\s*$/i,
-  /^nice to have\s*:?\s*$/i,
+  /^nice[- ]?to[- ]?have\s*:?\s*$/i,
   /^optional\s*:?\s*$/i,
+  /^opcional\s*:?\s*$/i,
   /^qualifications?\s*:?\s*$/i,
 ];
 const englishRequirementPatterns = [
-  { level: 'advanced', patterns: [/\bc1\b/i, /\bc2\b/i, /\bnative english\b/i, /\badvanced english\b/i] },
+  { level: 'advanced', patterns: [/\bc1\b/i, /\bc2\b/i, /\bnative english\b/i, /\badvanced english\b/i, /\bingl[eé]s avanzado\b/i] },
   {
     level: 'fluent',
     patterns: [
@@ -108,13 +161,21 @@ const englishRequirementPatterns = [
       /\bfluent english\b/i,
       /\bfluency in english\b/i,
       /\bfluent in english\b/i,
+      /\bingl[eé]s fluido\b/i,
     ],
   },
   {
     level: 'intermediate',
-    patterns: [/\bb1\b/i, /\bintermediate english\b/i, /\bconversational english\b/i],
+    patterns: [
+      /\bb1\b/i,
+      /\bintermediate english\b/i,
+      /\benglish\b.{0,40}\bintermediate\b/i,
+      /\bconversational english\b/i,
+      /\bingl[eé]s\b.{0,40}\bintermedio\b/i,
+      /\bingl[eé]s intermedio\b/i,
+    ],
   },
-  { level: 'basic', patterns: [/\ba1\b/i, /\ba2\b/i, /\bbasic english\b/i] },
+  { level: 'basic', patterns: [/\ba1\b/i, /\ba2\b/i, /\bbasic english\b/i, /\benglish\b.{0,40}\bbasic\b/i, /\bingl[eé]s\b.{0,40}\bb[aá]sico\b/i] },
 ];
 
 export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType, structuredJob }) {
@@ -405,7 +466,7 @@ function extractTechnologies(text) {
 
 function hasWholeTerm(text, value) {
   const escaped = escapeRegExp(value).replaceAll('\\ ', '\\s+');
-  return new RegExp(`(^|[^a-z0-9+.#-])${escaped}([^a-z0-9+.#-]|$)`, 'i').test(text);
+  return new RegExp(`(^|[^a-z0-9+#-])${escaped}([^a-z0-9+#-]|$)`, 'i').test(text);
 }
 
 function escapeRegExp(value) {
@@ -481,7 +542,7 @@ function buildStructuredSections({ analysisLines, structuredHints }) {
   }
 
   let currentSection = 'general';
-  for (const line of analysisLines) {
+  for (const line of expandAnalysisLines(analysisLines)) {
     const headingCandidate = cleanScalar(line);
     const sectionType = headingCandidate ? classifySectionHeading(headingCandidate) : null;
     if (sectionType) {
@@ -537,6 +598,83 @@ function classifySectionHeading(line) {
   return null;
 }
 
+function expandAnalysisLines(lines) {
+  const expanded = [];
+
+  for (const line of lines) {
+    const sections = splitInlineSectionBoundaries(line);
+    for (const sectionLine of sections) {
+      const headingWithContent = splitHeadingAndContent(sectionLine);
+      if (headingWithContent) {
+        expanded.push(headingWithContent.heading);
+        expanded.push(...splitRequirementAtoms(headingWithContent.content));
+        continue;
+      }
+
+      if (classifySectionHeading(sectionLine)) {
+        expanded.push(sectionLine);
+        continue;
+      }
+
+      expanded.push(...splitRequirementAtoms(sectionLine));
+    }
+  }
+
+  return expanded;
+}
+
+function splitInlineSectionBoundaries(line) {
+  let value = cleanScalar(line);
+  if (!value) {
+    return [];
+  }
+
+  for (const heading of inlineSectionHeadings) {
+    const pattern = new RegExp(`\\b${escapeRegExp(heading.label)}\\s*:\\s*`, 'gi');
+    value = value.replace(pattern, `\n${heading.label}:\n`);
+  }
+
+  return value
+    .split('\n')
+    .map(cleanScalar)
+    .filter(Boolean);
+}
+
+function splitHeadingAndContent(line) {
+  const cleaned = cleanScalar(line);
+  if (!cleaned) {
+    return null;
+  }
+
+  for (const heading of inlineContentHeadingLabels) {
+    const pattern = new RegExp(`^${escapeRegExp(heading.label)}\\s+(.+)$`, 'i');
+    const match = cleaned.match(pattern);
+    if (match?.[1]) {
+      return {
+        heading: heading.label,
+        content: match[1],
+      };
+    }
+  }
+
+  return null;
+}
+
+function splitRequirementAtoms(value) {
+  const cleaned = cleanScalar(
+    String(value ?? '')
+      .replace(/[•▪●]/g, '\n'),
+  );
+  if (!cleaned) {
+    return [];
+  }
+
+  return cleaned
+    .split(/\n|(?<=[.;])\s+(?=[A-ZÁÉÍÓÚÑ0-9])/u)
+    .map(cleanRequirementLikeText)
+    .filter(Boolean);
+}
+
 function isLabelOnly(line) {
   return labelOnlyPatterns.some((pattern) => pattern.test(line));
 }
@@ -575,6 +713,11 @@ function appendRequirementCandidate(buckets, text, level) {
   buckets.requirementItems.push({
     text: cleaned,
     level,
+    requirementLevel: level,
+    certainty: CERTAINTY.CONFIRMED,
+    evidence: cleaned,
+    category: inferRequirementCategory(cleaned),
+    minYears: extractMinimumYears(cleaned),
   });
 }
 
@@ -586,10 +729,37 @@ function cleanRequirementLikeText(value) {
   if (labelOnlyPatterns.some((pattern) => pattern.test(cleaned))) {
     return null;
   }
-  if (cleaned.length > 280) {
+  if (cleaned.length > 360) {
     return null;
   }
   return cleaned;
+}
+
+function inferRequirementCategory(text) {
+  const lowerText = String(text ?? '').toLowerCase();
+  if (/english|ingl[eé]s|idioma/.test(lowerText)) {
+    return 'language';
+  }
+  if (extractMinimumYears(text) !== null) {
+    return 'experience';
+  }
+  if (extractTechnologies(lowerText).length || /\b(api|apis|testing|serverless|arquitectura|architecture)\b/i.test(text)) {
+    return 'technology';
+  }
+  return 'general';
+}
+
+function extractMinimumYears(text) {
+  const value = String(text ?? '');
+  const rangeMatch = value.match(/\b(\d+)\s*[-–]\s*(\d+)\s*(?:years?|a[nñ]os)\b/i);
+  if (rangeMatch) {
+    return Number(rangeMatch[1]);
+  }
+
+  const minimumMatch = value.match(
+    /(?:a partir de|m[ií]nimo|minimum|at least)?\s*\b(\d+)\+?\s*(?:years?|a[nñ]os)\b/i,
+  );
+  return minimumMatch ? Number(minimumMatch[1]) : null;
 }
 
 function appendUnique(target, value) {
@@ -624,11 +794,11 @@ function buildTechnologyClaims(requirementItems) {
     for (const technology of technologies) {
       claims.push({
         technology,
-        requirementLevel: item.level,
-        certainty: CERTAINTY.INFERRED,
+        requirementLevel: item.requirementLevel ?? item.level,
+        certainty: item.certainty ?? CERTAINTY.CONFIRMED,
         relationship,
         alternativeGroup,
-        evidence: item.text,
+        evidence: item.evidence ?? item.text,
       });
     }
   }
@@ -651,7 +821,7 @@ function isAlternativeRequirement(text, technologies) {
     return false;
   }
 
-  return /\/|\bor\b|\betc\.?\b|\bsuch as\b|\blike\b/i.test(text);
+  return /\/|\bor\b|\bo\b|\betc\.?\b|\bsuch as\b|\blike\b/i.test(text);
 }
 
 function dedupeStrings(values = []) {
