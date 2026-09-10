@@ -14,6 +14,16 @@ Publicado hace 14 horas
 Node.js React MySQL Jest
 `.trim();
 
+function itemTexts(items) {
+  return items.map((item) => item.text);
+}
+
+function findTechnologyClaim(parsed, technology, evidencePart) {
+  return parsed.jobOffer.technologyClaims.find(
+    (claim) => claim.technology === technology && (!evidencePart || claim.evidence.includes(evidencePart)),
+  );
+}
+
 describe('manualJobParser', () => {
   it('prefers the structured snapshot title over the LinkedIn detail panel text block', () => {
     const parsed = parseManualJob({
@@ -282,7 +292,7 @@ describe('manualJobParser', () => {
       'GitFlow.',
       'Testing con Jest/RTL.',
       'Responsabilidades: Construir funcionalidades full stack y colaborar con producto.',
-      'Beneficios: Esquema por honorarios 100% remoto.',
+      'Beneficios: Esquema por honorarios 100% remoto (Latinoamérica) Participación en proyectos con tecnologías modernas Trabajo con herramientas de IA aplicadas al desarrollo Equipo y herramientas proporcionadas por cliente',
     ].join(' ');
 
     const parsed = parseManualJob({
@@ -318,7 +328,12 @@ describe('manualJobParser', () => {
         'Testing con Jest/RTL.',
       ]),
     );
-    expect(parsed.jobOffer.benefits).toEqual(['Esquema por honorarios 100% remoto.']);
+    expect(parsed.jobOffer.benefits).toEqual([
+      'Esquema por honorarios 100% remoto (Latinoamérica)',
+      'Participación en proyectos con tecnologías modernas',
+      'Trabajo con herramientas de IA aplicadas al desarrollo',
+      'Equipo y herramientas proporcionadas por cliente',
+    ]);
     expect(parsed.jobOffer.responsibilities).toEqual([
       'Construir funcionalidades full stack y colaborar con producto.',
     ]);
@@ -389,6 +404,11 @@ describe('manualJobParser', () => {
         alternativeGroup: mongoClaim.alternativeGroup,
       }),
     );
+
+    expect(findTechnologyClaim(parsed, 'Docker')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'GitFlow')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'Jest')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'React Testing Library')).toEqual(expect.objectContaining({ relationship: 'all' }));
   });
 
   it('detects headings with content in the same line in Spanish and English', () => {
@@ -522,6 +542,56 @@ describe('manualJobParser', () => {
     expect(parsed.jobOffer.optionalRequirements).not.toContain('AWS is required for cloud services.');
   });
 
+  it('enforces segmentation invariants for fragments, partial duplicates and relationships', () => {
+    const parsed = parseManualJob({
+      rawText: [
+        'Backend Engineer',
+        'Requirements:',
+        'Solid technical scoping, requirements translation, and full SDLC ownership.',
+        'Solid technical scoping,',
+        'translation, and full SDLC ownership.',
+        'Experiencia con Docker, GitFlow y testing con Jest/RTL.',
+        'Preferred:',
+        'Next.js o React Native.',
+        'Responsibilities:',
+        'Translate requirements into prototypes and production-ready technical solutions;',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/invariants',
+      sourceLabel: 'Manual',
+    });
+
+    const requirementTexts = itemTexts(parsed.jobOffer.requirementItems);
+    expect(requirementTexts).toContain('Solid technical scoping, requirements translation, and full SDLC ownership.');
+    expect(requirementTexts).not.toContain('Solid technical scoping,');
+    expect(requirementTexts).not.toContain('translation, and full SDLC ownership.');
+    expect(requirementTexts).not.toContain('Requirements');
+    expect(requirementTexts).not.toContain('Preferred');
+    expect(requirementTexts).not.toContain('Responsibilities');
+    expect(requirementTexts.some((text) => text.endsWith(','))).toBe(false);
+    expect(parsed.jobOffer.requirements).not.toContain('Translate requirements into prototypes and production-ready technical solutions;');
+    expect(parsed.jobOffer.responsibilities).toContain('Translate requirements into prototypes and production-ready technical solutions;');
+
+    expect(parsed.jobOffer.requirementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: 'Solid technical scoping, requirements translation, and full SDLC ownership.',
+          category: 'general',
+        }),
+      ]),
+    );
+    expect(findTechnologyClaim(parsed, 'Docker')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'GitFlow')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'Jest')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'React Testing Library')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'Next.js')).toEqual(expect.objectContaining({ relationship: 'alternative' }));
+    expect(findTechnologyClaim(parsed, 'React Native')).toEqual(
+      expect.objectContaining({
+        relationship: 'alternative',
+        alternativeGroup: findTechnologyClaim(parsed, 'Next.js').alternativeGroup,
+      }),
+    );
+  });
+
   it('resolves requirement level conflicts by keeping the strongest level for equivalent evidence', () => {
     const parsed = parseManualJob({
       rawText: [
@@ -563,6 +633,115 @@ describe('manualJobParser', () => {
       }),
     ]);
     expect(parsed.jobOffer.technologyClaims.some((claim) => claim.technology === 'JavaScript')).toBe(false);
+  });
+
+  it('segments Avenga-style natural headings without fragments or section leakage', () => {
+    const description = [
+      'This is you',
+      '5+ years with Node.js.',
+      'NestJS or Express.',
+      'RESTful APIs.',
+      'Microservices.',
+      'Cloud deployment.',
+      'GitLab workflows.',
+      'Monitoring/alerting.',
+      'Solid technical scoping, requirements translation, and full SDLC ownership.',
+      'English intermediate.',
+      'Nice-to-have skills',
+      'AWS serverless.',
+      'TypeScript.',
+      'React.',
+      'Agile SDLC.',
+      'This is your role',
+      'Design and maintain BFF/backend services.',
+      'Build/document REST APIs.',
+      'Translate requirements into prototypes and production-ready technical solutions;',
+      'Ensure code quality with automated tests;',
+      'Deploy and manage cloud applications;',
+      'Improve performance and scalability;',
+      'Maintain documentation;',
+      'Collaborate with frontend teams and mentor peers.',
+    ].join(' ');
+
+    const parsed = parseManualJob({
+      rawText: ['Middle Node.js Engineer | Avenga', 'Company: Avenga', 'Description:', description].join('\n'),
+      sourceUrl: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4465551234',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+      sourceType: 'LINKEDIN_JOBS_SUPERVISED',
+      structuredJob: {
+        title: 'Middle Node.js Engineer',
+        company: 'Avenga',
+        location: 'Argentina',
+        seniority: 'mid',
+        description,
+      },
+    });
+
+    expect(parsed.jobOffer.requirements).toEqual(
+      expect.arrayContaining([
+        '5+ years with Node.js.',
+        'NestJS or Express.',
+        'RESTful APIs.',
+        'Microservices.',
+        'Cloud deployment.',
+        'GitLab workflows.',
+        'Monitoring/alerting.',
+        'Solid technical scoping, requirements translation, and full SDLC ownership.',
+        'English intermediate',
+      ]),
+    );
+    expect(parsed.jobOffer.preferredRequirements).toEqual(
+      expect.arrayContaining(['AWS serverless.', 'TypeScript.', 'React.', 'Agile SDLC']),
+    );
+    expect(parsed.jobOffer.responsibilities).toEqual(
+      expect.arrayContaining([
+        'Design and maintain BFF/backend services.',
+        'Build/document REST APIs.',
+        'Translate requirements into prototypes and production-ready technical solutions;',
+        'Ensure code quality with automated tests;',
+        'Deploy and manage cloud applications;',
+        'Improve performance and scalability;',
+        'Maintain documentation;',
+        'Collaborate with frontend teams and mentor peers.',
+      ]),
+    );
+
+    const requirementTexts = itemTexts(parsed.jobOffer.requirementItems);
+    expect(requirementTexts).not.toContain('This is you');
+    expect(requirementTexts).not.toContain('This is your role');
+    expect(requirementTexts).not.toContain('Translate');
+    expect(requirementTexts).not.toContain('into prototypes and production-ready technical solutions;');
+    expect(requirementTexts).not.toContain('Solid technical scoping,');
+    expect(parsed.jobOffer.requirements).not.toContain('Translate requirements into prototypes and production-ready technical solutions;');
+    expect(parsed.jobOffer.preferredRequirements).not.toContain('This is your role');
+    expect(parsed.jobOffer.preferredRequirements).not.toContain('Design and maintain BFF/backend services.');
+
+    expect(parsed.jobOffer.requirementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: '5+ years with Node.js.',
+          category: 'experience',
+          minYears: 5,
+        }),
+        expect.objectContaining({
+          text: 'English intermediate',
+          category: 'language',
+        }),
+        expect.objectContaining({
+          text: 'Solid technical scoping, requirements translation, and full SDLC ownership.',
+          category: 'general',
+        }),
+      ]),
+    );
+    expect(findTechnologyClaim(parsed, 'NestJS')).toEqual(expect.objectContaining({ relationship: 'alternative' }));
+    expect(findTechnologyClaim(parsed, 'Express')).toEqual(
+      expect.objectContaining({
+        relationship: 'alternative',
+        alternativeGroup: findTechnologyClaim(parsed, 'NestJS').alternativeGroup,
+      }),
+    );
+    expect(findTechnologyClaim(parsed, 'Node.js')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'GitLab')).toEqual(expect.objectContaining({ relationship: 'all' }));
   });
 
   it('parses the Wispok supervised description into required, preferred and responsibility segments', () => {
@@ -632,6 +811,9 @@ describe('manualJobParser', () => {
         expect.objectContaining({ technology: 'AWS', requirementLevel: 'preferred' }),
       ]),
     );
+    expect(findTechnologyClaim(parsed, 'Git')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'Scrum')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'Kanban')).toEqual(expect.objectContaining({ relationship: 'all' }));
     expect(parsed.jobOffer.technologyClaims.some((claim) => claim.technology === 'AWS' && claim.requirementLevel === 'required')).toBe(false);
   });
 
@@ -722,5 +904,7 @@ describe('manualJobParser', () => {
         expect.objectContaining({ technology: 'UML', requirementLevel: 'preferred' }),
       ]),
     );
+    expect(findTechnologyClaim(parsed, 'REST API', 'REST y SOAP')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'SOAP API', 'REST y SOAP')).toEqual(expect.objectContaining({ relationship: 'all' }));
   });
 });
