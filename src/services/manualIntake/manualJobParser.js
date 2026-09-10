@@ -6,15 +6,18 @@ const technologyAliases = {
   'TypeScript': ['typescript', 'ts'],
   'Node.js': ['node.js', 'nodejs', 'node js', 'node'],
   Express: ['express', 'express.js', 'expressjs'],
+  NestJS: ['nestjs', 'nest.js', 'nest js'],
   React: ['react', 'react.js', 'reactjs'],
   Vite: ['vite'],
   'React Router': ['react router', 'react-router', 'reactrouter'],
   MySQL: ['mysql', 'my sql'],
+  SQL: ['sql'],
   MongoDB: ['mongodb', 'mongo db', 'mongo'],
   Redis: ['redis'],
   Docker: ['docker'],
   Python: ['python'],
   Java: ['java'],
+  GitLab: ['gitlab', 'git lab'],
   Jest: ['jest'],
   Supertest: ['supertest', 'super test'],
   'Socket.io': ['socket.io', 'socket io', 'socketio'],
@@ -29,7 +32,20 @@ const technologyAliases = {
   'React Native': ['react native', 'react-native'],
   GraphQL: ['graphql', 'graph ql'],
   'REST API': ['rest api', 'rest apis', 'apis rest', 'api rest', 'restful', 'rest'],
+  'SOAP API': ['soap api', 'soap apis', 'soap'],
   'React Testing Library': ['react testing library', 'rtl'],
+  Kubernetes: ['kubernetes', 'k8s'],
+  'Elastic Stack': ['elastic stack', 'elasticsearch'],
+  Postman: ['postman'],
+  UML: ['uml'],
+  Scrum: ['scrum'],
+  Kanban: ['kanban'],
+  'CI/CD': ['ci/cd', 'continuous integration', 'integracion continua', 'integración continua'],
+  SOLID: ['solid'],
+  DDD: ['ddd', 'domain driven design'],
+  'Clean Architecture': ['clean architecture', 'arquitectura limpia'],
+  'Hexagonal Architecture': ['hexagonal architecture', 'arquitectura hexagonal', 'patron hexagonal', 'patrón hexagonal'],
+  Queues: ['queues', 'colas'],
   GitFlow: ['gitflow', 'git flow'],
   Figma: ['figma'],
   Git: ['git'],
@@ -49,28 +65,39 @@ const ignoredTitlePatterns = [
 ];
 
 const companyFallbackPatterns = [/^(we are|estamos|somos|buscamos|hiring)\b/i];
+const linkedInUiNoisePatterns = [
+  /a tu perfil\s+a?\s*y\s+tu curr[ií]culum les faltan/i,
+  /mira una comparaci[oó]n con (otros solicitantes|otras personas)/i,
+  /mostrar informaci[oó]n premium/i,
+  /applicant insights/i,
+  /candidate insights/i,
+  /basado en los datos de linkedin/i,
+  /figurar[ií]as entre los principales solicitantes/i,
+  /try premium/i,
+  /premium/i,
+];
 
 const modalityPatterns = [
   { value: 'remote', patterns: ['remote', 'remoto'] },
-  { value: 'hybrid', patterns: ['hybrid', 'hibrido', 'híbrido'] },
+  { value: 'hybrid', patterns: ['hybrid', 'hibrido', 'híbrido', 'hibrida', 'híbrida'] },
   { value: 'onsite', patterns: ['onsite', 'presencial', 'on site'] },
 ];
 const requirementSectionPatterns = {
   required: [
-    /^(requirements?|must[- ]?have|required|minimum requirements?|minimum qualifications?|qualifications?|what you need|profile required)\s*:?\s*$/i,
-    /^(requisitos?|perfil requerido|excluyentes?|obligatorios?)\s*:?\s*$/i,
+    /^(requirements?|must[- ]?have|required|minimum requirements?|minimum qualifications?|qualifications?|what you need|profile required|this is you)\s*:?\s*$/i,
+    /^(requisitos?(?:\s+excluyentes?)?|perfil requerido|experiencia requerida|buscamos a alguien con experiencia real en|excluyentes?|obligatorios?)\s*:?\s*$/i,
   ],
   preferred: [
     /^(preferred qualifications?|nice[- ]?to[- ]?have|preferred|bonus points?|bonus|plus)\s*:?\s*$/i,
-    /^(preferidos?|deseables?|ser[aá] un plus|valorado)\s*:?\s*$/i,
+    /^(requisitos?\s+deseables?|preferidos?|deseables?|deseable|ser[aá] un plus|valorado)\s*:?\s*$/i,
   ],
   responsibilities: [
-    /^(responsibilities|duties|what you'?ll do|you will|about the role|role overview)\s*:?\s*$/i,
-    /^(responsabilidades|tareas|funciones|qu[eé] har[aá]s)\s*:?\s*$/i,
+    /^(responsibilities|duties|what you'?ll do|you will|about the role|role overview|this is your role|your role|your responsibilities)\s*:?\s*$/i,
+    /^(responsabilidades|tareas|funciones|qu[eé] har[aá]s|en este rol tambi[eé]n estar[aá]s a cargo de)\s*:?\s*$/i,
   ],
   benefits: [
     /^(benefits?|perks?|what we offer|why join|why you'?ll love|our offer)\s*:?\s*$/i,
-    /^(beneficios?|ofrecemos|qu[eé] ofrecemos)\s*:?\s*$/i,
+    /^(beneficios?|ofrecemos|qu[eé] ofrecemos|lo que ofrecemos)\s*:?\s*$/i,
   ],
   optional: [/^(optional|desirable|opcional)\s*:?\s*$/i],
 };
@@ -79,15 +106,25 @@ const inlineSectionHeadings = [
   { section: 'required', label: 'Minimum Qualifications' },
   { section: 'required', label: 'Perfil requerido' },
   { section: 'required', label: 'What you need' },
+  { section: 'required', label: 'This is you' },
   { section: 'required', label: 'Must have' },
   { section: 'required', label: 'Requirements' },
   { section: 'required', label: 'Qualifications' },
+  { section: 'required', label: 'Requisitos excluyentes' },
+  { section: 'required', label: 'Experiencia requerida' },
+  { section: 'required', label: 'Buscamos a alguien con experiencia real en' },
   { section: 'required', label: 'Requisitos' },
+  { section: 'general', label: 'Description' },
+  { section: 'general', label: 'Descripcion' },
+  { section: 'general', label: 'Descripción' },
   { section: 'preferred', label: 'Preferred Qualifications' },
+  { section: 'preferred', label: 'Nice-to-have skills' },
   { section: 'preferred', label: 'Nice-to-have' },
   { section: 'preferred', label: 'Nice to have' },
   { section: 'preferred', label: 'Preferidos' },
+  { section: 'preferred', label: 'Requisitos deseables' },
   { section: 'preferred', label: 'Deseables' },
+  { section: 'preferred', label: 'Deseable' },
   { section: 'preferred', label: 'Preferred' },
   { section: 'preferred', label: 'Bonus' },
   { section: 'preferred', label: 'Plus' },
@@ -95,11 +132,16 @@ const inlineSectionHeadings = [
   { section: 'optional', label: 'Desirable' },
   { section: 'optional', label: 'Opcional' },
   { section: 'responsibilities', label: "What you'll do" },
+  { section: 'responsibilities', label: 'This is your role' },
+  { section: 'responsibilities', label: 'Your responsibilities' },
+  { section: 'responsibilities', label: 'Your role' },
   { section: 'responsibilities', label: 'Responsibilities' },
   { section: 'responsibilities', label: 'Duties' },
+  { section: 'responsibilities', label: 'En este rol también estarás a cargo de' },
   { section: 'responsibilities', label: 'Responsabilidades' },
   { section: 'responsibilities', label: 'Tareas' },
   { section: 'benefits', label: 'What we offer' },
+  { section: 'benefits', label: 'Lo que ofrecemos' },
   { section: 'benefits', label: 'Benefits' },
   { section: 'benefits', label: 'Perks' },
   { section: 'benefits', label: 'Beneficios' },
@@ -140,15 +182,28 @@ const inlineBenefitPatterns = [/\bbenefit\b/i, /\bperk\b/i, /\bwe offer\b/i, /\b
 const labelOnlyPatterns = [
   /^requirements?\s*:?\s*$/i,
   /^requisitos?\s*:?\s*$/i,
+  /^requisitos?\s+excluyentes?\s*:?\s*$/i,
+  /^requisitos?\s+deseables?\s*:?\s*$/i,
+  /^experiencia requerida\s*:?\s*$/i,
+  /^buscamos a alguien con experiencia real en\s*:?\s*$/i,
+  /^description\s*:?\s*$/i,
+  /^descripci[oó]n\s*:?\s*$/i,
   /^perfil requerido\s*:?\s*$/i,
+  /^this is you\s*:?\s*$/i,
   /^responsibilities\s*:?\s*$/i,
+  /^this is your role\s*:?\s*$/i,
+  /^your role\s*:?\s*$/i,
+  /^your responsibilities\s*:?\s*$/i,
   /^responsabilidades\s*:?\s*$/i,
+  /^en este rol tambi[eé]n estar[aá]s a cargo de\s*:?\s*$/i,
   /^benefits?\s*:?\s*$/i,
   /^beneficios?\s*:?\s*$/i,
+  /^lo que ofrecemos\s*:?\s*$/i,
   /^preferred qualifications?\s*:?\s*$/i,
   /^nice[- ]?to[- ]?have\s*:?\s*$/i,
   /^optional\s*:?\s*$/i,
   /^opcional\s*:?\s*$/i,
+  /^deseable\s*:?\s*$/i,
   /^qualifications?\s*:?\s*$/i,
 ];
 const englishRequirementPatterns = [
@@ -182,7 +237,7 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType, st
   const lines = toLines(rawText);
 
   const structuredHints = normalizeStructuredJobHints(structuredJob);
-  const analysisText = buildAnalysisText(rawText, structuredHints);
+  const analysisText = buildAnalysisText(rawText, structuredHints, sourceType || sourceTypeOrDefault(sourceLabel));
   const analysisLines = toLines(analysisText);
   const titleCandidateLines = selectTitleCandidateLines(lines);
   const lowerText = analysisText.toLowerCase();
@@ -193,7 +248,10 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType, st
   const technologies = structuredHints.technologies.length
     ? structuredHints.technologies
     : extractTechnologies(lowerText);
-  const seniority = chooseKnownValue(structuredHints.seniority, extractSeniority(lowerText));
+  const seniority = chooseKnownValue(
+    structuredHints.seniority,
+    extractSeniorityFromMetadata({ title, lines: titleCandidateLines }),
+  );
   const englishRequirement = extractEnglishRequirement(lowerText);
   const modality = structuredHints.modality.length ? structuredHints.modality : extractModality(lowerText);
   const salary = extractSalary(rawText);
@@ -379,20 +437,29 @@ export function normalizeTechnology(term) {
   return cleanScalar(term) ?? term;
 }
 
-function extractSeniority(text) {
-  if (/(lead|staff|principal)/i.test(text)) {
+function extractSeniorityFromMetadata({ title, lines }) {
+  const labeledSeniority = extractField(lines, ['seniority', 'seniority level', 'nivel', 'nivel de seniority']);
+  return normalizeSeniority(labeledSeniority) ?? normalizeSeniority(title) ?? 'unknown';
+}
+
+function normalizeSeniority(text) {
+  const value = String(text ?? '').toLowerCase();
+  if (!value) {
+    return null;
+  }
+  if (/\b(lead|staff|principal)\b/i.test(value)) {
     return 'lead';
   }
-  if (/(senior|sr\.)/i.test(text)) {
+  if (/\b(senior|sr\.?)\b/i.test(value)) {
     return 'senior';
   }
-  if (/(semi.?senior|mid|ssr)/i.test(text)) {
+  if (/\b(middle(?:-strong)?|semi[- ]?senior|mid|ssr)\b/i.test(value)) {
     return 'mid';
   }
-  if (/(junior|jr\.)/i.test(text)) {
+  if (/\b(junior|jr\.?)\b/i.test(value)) {
     return 'junior';
   }
-  return 'unknown';
+  return null;
 }
 
 function extractEnglishRequirement(text) {
@@ -455,6 +522,13 @@ function extractTechnologies(text) {
   const detected = [];
 
   for (const [canonical, aliases] of Object.entries(technologyAliases)) {
+    if (canonical === 'SOLID') {
+      if (hasSolidPrinciples(text)) {
+        detected.push(canonical);
+      }
+      continue;
+    }
+
     const variants = [canonical, ...aliases];
     if (variants.some((variant) => hasWholeTerm(text, variant))) {
       detected.push(canonical);
@@ -464,8 +538,17 @@ function extractTechnologies(text) {
   return detected;
 }
 
+function hasSolidPrinciples(text) {
+  return /\b(principles?|principios?)\s+(?:de\s+)?solid\b|\bsolid\s+(?:principles?|principios?|patterns?|design|architecture|arquitectura)\b/i.test(
+    text,
+  );
+}
+
 function hasWholeTerm(text, value) {
   const escaped = escapeRegExp(value).replaceAll('\\ ', '\\s+');
+  if (['js', 'ts'].includes(normalizeToken(value))) {
+    return new RegExp(`(^|[^a-z0-9.+#-])${escaped}([^a-z0-9.+#-]|$)`, 'i').test(text);
+  }
   return new RegExp(`(^|[^a-z0-9+#-])${escaped}([^a-z0-9+#-]|$)`, 'i').test(text);
 }
 
@@ -494,7 +577,7 @@ function normalizeStructuredJobHints(structuredJob) {
     company: cleanCompany(structuredJob.company),
     location: cleanScalar(structuredJob.location),
     modality: cleanStringArray(structuredJob.modality),
-    seniority: cleanScalar(structuredJob.seniority),
+    seniority: normalizeSeniority(structuredJob.seniority),
     technologies: cleanStringArray(structuredJob.technologies).map(normalizeTechnology),
     requirements: cleanStringArray(structuredJob.requirements),
     description: cleanMultilineText(structuredJob.description),
@@ -503,15 +586,65 @@ function normalizeStructuredJobHints(structuredJob) {
   };
 }
 
-function buildAnalysisText(rawText, structuredHints) {
-  const prioritized = [
-    structuredHints.description,
+function buildAnalysisText(rawText, structuredHints, sourceType) {
+  const isSupervisedLinkedIn = sourceType === 'LINKEDIN_JOBS_SUPERVISED';
+  const description = structuredHints.description;
+  const structuredArrays = [
     ...structuredHints.requirements,
     ...structuredHints.responsibilities,
     ...structuredHints.benefits,
-  ].filter(Boolean);
+  ].filter((value) => isValidStructuredArrayItem(value, description, isSupervisedLinkedIn));
+  const prioritized = dedupeAnalysisSegments([
+    description,
+    ...structuredArrays,
+  ]);
 
   return prioritized.length ? prioritized.join('\n') : rawText;
+}
+
+function isValidStructuredArrayItem(value, description, isSupervisedLinkedIn) {
+  const cleaned = cleanMultilineText(value);
+  if (!cleaned || isLinkedInUiNoise(cleaned)) {
+    return false;
+  }
+  if (!isSupervisedLinkedIn) {
+    return true;
+  }
+
+  const descriptionKey = normalizeEvidenceText(description);
+  const itemKey = normalizeEvidenceText(cleaned);
+  const headingMatches = inlineSectionHeadings.filter((heading) =>
+    new RegExp(`\\b${escapeRegExp(heading.label)}\\b`, 'i').test(cleaned),
+  ).length;
+
+  if (descriptionKey && itemKey === descriptionKey) {
+    return false;
+  }
+  if (descriptionKey && cleaned.length > String(description ?? '').length * 0.65) {
+    return false;
+  }
+  if (headingMatches >= 2) {
+    return false;
+  }
+
+  return !/(benefits?|responsibilities|requisitos?\s+deseables?|requisitos?\s+excluyentes?|beneficios?|responsabilidades)\s*:/i.test(cleaned);
+}
+
+function dedupeAnalysisSegments(values) {
+  const segments = [];
+  const seen = new Set();
+
+  for (const value of values) {
+    const cleaned = cleanMultilineText(value);
+    const key = normalizeEvidenceText(cleaned);
+    if (!cleaned || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    segments.push(cleaned);
+  }
+
+  return segments;
 }
 
 function toLines(text) {
@@ -559,12 +692,15 @@ function buildStructuredSections({ analysisLines, structuredHints }) {
       continue;
     }
 
-    if (currentSection === 'responsibilities' || inlineResponsibilityPatterns.some((pattern) => pattern.test(cleaned))) {
+    if (
+      currentSection === 'responsibilities' ||
+      (currentSection === 'general' && inlineResponsibilityPatterns.some((pattern) => pattern.test(cleaned)))
+    ) {
       appendUnique(buckets.responsibilities, cleaned);
       continue;
     }
 
-    if (currentSection === 'benefits' || inlineBenefitPatterns.some((pattern) => pattern.test(cleaned))) {
+    if (currentSection === 'benefits' || (currentSection === 'general' && inlineBenefitPatterns.some((pattern) => pattern.test(cleaned)))) {
       appendUnique(buckets.benefits, cleaned);
       continue;
     }
@@ -575,7 +711,7 @@ function buildStructuredSections({ analysisLines, structuredHints }) {
     }
   }
 
-  buckets.requirementItems = dedupeRequirementItems(buckets.requirementItems);
+  buckets.requirementItems = canonicalizeRequirementItems(buckets.requirementItems);
   buckets.requirements = dedupeStrings(buckets.requirementItems.filter((item) => item.level === 'required').map((item) => item.text));
   buckets.preferredRequirements = dedupeStrings(
     buckets.requirementItems.filter((item) => item.level === 'preferred').map((item) => item.text),
@@ -590,8 +726,9 @@ function buildStructuredSections({ analysisLines, structuredHints }) {
 }
 
 function classifySectionHeading(line) {
+  const normalizedLine = normalizeHeadingLine(line);
   for (const [section, patterns] of Object.entries(requirementSectionPatterns)) {
-    if (patterns.some((pattern) => pattern.test(line))) {
+    if (patterns.some((pattern) => pattern.test(normalizedLine))) {
       return section;
     }
   }
@@ -630,8 +767,18 @@ function splitInlineSectionBoundaries(line) {
   }
 
   for (const heading of inlineSectionHeadings) {
-    const pattern = new RegExp(`\\b${escapeRegExp(heading.label)}\\s*:\\s*`, 'gi');
-    value = value.replace(pattern, `\n${heading.label}:\n`);
+    const colonPattern = new RegExp(`\\b${escapeRegExp(heading.label)}\\s*:\\s*`, 'gi');
+    value = value.replace(colonPattern, `\n${heading.label}:\n`);
+    if (isStrongInlineBoundary(heading.label)) {
+      const inlinePattern = new RegExp(`(^|[.!?]\\s+|\\s+)([\\p{Extended_Pictographic}\\p{So}]*\\s*)${escapeRegExp(heading.label)}\\s+(?=[A-ZÁÉÍÓÚÑa-záéíóúñ+0-9])`, 'giu');
+      value = value.replace(inlinePattern, (match, prefix, icon) => {
+        const matchedLabel = match.slice(prefix.length + icon.length).trimStart().slice(0, heading.label.length);
+        if (!canTreatInlineMatchAsHeading({ prefix, icon, matchedLabel })) {
+          return match;
+        }
+        return `\n${heading.label}:\n`;
+      });
+    }
   }
 
   return value
@@ -669,10 +816,102 @@ function splitRequirementAtoms(value) {
     return [];
   }
 
-  return cleaned
+  const segmented = insertSemanticItemBoundaries(cleaned);
+  return segmented
     .split(/\n|(?<=[.;])\s+(?=[A-ZÁÉÍÓÚÑ0-9])/u)
     .map(cleanRequirementLikeText)
     .filter(Boolean);
+}
+
+function insertSemanticItemBoundaries(value) {
+  const starters = [
+    'Dominio de',
+    'Desarrollo de',
+    'Desarrollo y consumo de',
+    'Conocimiento de',
+    'Conocimiento en',
+    'Conocimientos de',
+    'Conocimientos avanzados en',
+    'Conocimientos básicos/intermedios en',
+    'Conocimientos basicos/intermedios en',
+    'Conocimientos prácticos de',
+    'Conocimientos practicos de',
+    'Comprension profunda de',
+    'Comprensión profunda de',
+    'Fluidez con',
+    'Experiencia en',
+    'Experiencia trabajando',
+    'Experience with',
+    'Experience in',
+    '5+ years',
+    '3+ years',
+    'English intermediate',
+    'Intermediate English',
+    'Solid technical scoping',
+    'NestJS or',
+    'RESTful APIs',
+    'Microservices',
+    'Cloud deployment',
+    'code version control tools',
+    'GitLab workflows',
+    'Monitoring/alerting',
+    'AWS serverless',
+    'Agile SDLC',
+    'Manejo de',
+    'Formacion en',
+    'Formación en',
+    'Esquema por',
+    'Participación en',
+    'Participacion en',
+    'Trabajo con',
+    'Equipo y herramientas',
+    'Lugar y esquema',
+    'Diseñar',
+    'Disenar',
+    'Design and maintain',
+    'Build/document',
+    'Translate requirements',
+    'Ensure code quality',
+    'Deploy and manage',
+    'Improve performance',
+    'Maintain documentation',
+    'Collaborate with',
+    'Implementar',
+    'Mantener',
+    'Colaborar',
+    'Documentar',
+    'Participar',
+    'Ejecutar',
+    'Aplicar',
+  ];
+  let segmented = value;
+  for (const starter of starters) {
+    const pattern = new RegExp(`\\s+(${escapeRegExp(starter)}\\b)`, 'g');
+    segmented = segmented.replace(pattern, '\n$1');
+  }
+  segmented = segmented
+    .replace(/\s+(A tu perfil\s+a?\s*y\s+tu curr[ií]culum les faltan)/gi, '\n$1')
+    .replace(/\s+(Mira una comparaci[oó]n con (?:otros solicitantes|otras personas))/gi, '\n$1')
+    .replace(/\s+(Applicant insights|Candidate insights|Mostrar informaci[oó]n Premium)/gi, '\n$1');
+  return segmented;
+}
+
+function normalizeHeadingLine(value) {
+  return String(value ?? '')
+    .replace(/^[\p{Extended_Pictographic}\p{So}\s]+/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isStrongInlineBoundary(label) {
+  return !/^(description|descripcion|descripción|preferred|optional|desirable|bonus|plus|tareas)$/i.test(label);
+}
+
+function canTreatInlineMatchAsHeading({ prefix, icon, matchedLabel }) {
+  const startsAtSentenceBoundary = !prefix || /[.!?]\s+$/.test(prefix);
+  const hasVisualMarker = Boolean(icon?.trim());
+  const startsUppercase = /^[A-ZÁÉÍÓÚÑ]/u.test(matchedLabel);
+  return startsAtSentenceBoundary || hasVisualMarker || startsUppercase;
 }
 
 function isLabelOnly(line) {
@@ -722,17 +961,52 @@ function appendRequirementCandidate(buckets, text, level) {
 }
 
 function cleanRequirementLikeText(value) {
-  const cleaned = cleanScalar(String(value ?? '').replace(/^[-*•]\s*/, ''));
+  const cleaned = cleanScalar(
+    normalizeHeadingLine(String(value ?? '').replace(/^[-*•]\s*/, '')),
+  );
   if (!cleaned) {
     return null;
   }
-  if (labelOnlyPatterns.some((pattern) => pattern.test(cleaned))) {
+  if (labelOnlyPatterns.some((pattern) => pattern.test(cleaned)) || isLinkedInUiNoise(cleaned)) {
+    return null;
+  }
+  if (isIncompleteRequirementFragment(cleaned)) {
     return null;
   }
   if (cleaned.length > 360) {
     return null;
   }
   return cleaned;
+}
+
+function isIncompleteRequirementFragment(value) {
+  const cleaned = cleanScalar(value);
+  if (!cleaned) {
+    return true;
+  }
+
+  const lowerText = cleaned.toLowerCase();
+  const technologies = extractTechnologies(lowerText);
+  if (technologies.length && cleaned.split(/\s+/).length <= 2) {
+    return false;
+  }
+
+  if (/,\s*$/.test(cleaned)) {
+    return true;
+  }
+  if (/^(and|or|into|with|using|for|to|of|in|on|from|y|o|e|con|para|de|del|la|el)\b/i.test(cleaned)) {
+    return true;
+  }
+  if (/^this is$/i.test(cleaned)) {
+    return true;
+  }
+  if (/^[a-záéíóúñ]/u.test(cleaned) && !extractMinimumYears(cleaned) && technologies.length === 0) {
+    return true;
+  }
+  if (/^(translate|ensure|deploy|improve|maintain|collaborate|build|design|document|mentor)$/i.test(cleaned)) {
+    return true;
+  }
+  return false;
 }
 
 function inferRequirementCategory(text) {
@@ -743,7 +1017,7 @@ function inferRequirementCategory(text) {
   if (extractMinimumYears(text) !== null) {
     return 'experience';
   }
-  if (extractTechnologies(lowerText).length || /\b(api|apis|testing|serverless|arquitectura|architecture)\b/i.test(text)) {
+  if (extractTechnologies(lowerText).length || /\b(api|apis|serverless|arquitectura|architecture)\b/i.test(text)) {
     return 'technology';
   }
   return 'general';
@@ -751,7 +1025,7 @@ function inferRequirementCategory(text) {
 
 function extractMinimumYears(text) {
   const value = String(text ?? '');
-  const rangeMatch = value.match(/\b(\d+)\s*[-–]\s*(\d+)\s*(?:years?|a[nñ]os)\b/i);
+  const rangeMatch = value.match(/\b(\d+)\s*(?:[-–]|a|to)\s*(\d+)\s*(?:years?|a[nñ]os)\b/i);
   if (rangeMatch) {
     return Number(rangeMatch[1]);
   }
@@ -772,11 +1046,63 @@ function appendUnique(target, value) {
   }
 }
 
-function dedupeRequirementItems(items) {
-  return items.filter(
-    (entry, index, list) =>
-      index === list.findIndex((candidate) => candidate.text.toLowerCase() === entry.text.toLowerCase() && candidate.level === entry.level),
-  );
+function canonicalizeRequirementItems(items) {
+  const canonicalItems = [];
+
+  for (const item of items) {
+    const duplicateIndex = canonicalItems.findIndex((candidate) => areEquivalentRequirementItems(candidate, item));
+    if (duplicateIndex === -1) {
+      canonicalItems.push(item);
+      continue;
+    }
+
+    canonicalItems[duplicateIndex] = chooseBestRequirementItem(canonicalItems[duplicateIndex], item);
+  }
+
+  return canonicalItems;
+}
+
+function areEquivalentRequirementItems(left, right) {
+  const leftKey = normalizeEvidenceText(left.evidence ?? left.text);
+  const rightKey = normalizeEvidenceText(right.evidence ?? right.text);
+  if (!leftKey || !rightKey) {
+    return false;
+  }
+  if (leftKey === rightKey) {
+    return true;
+  }
+  return isPartialRequirementDuplicate(leftKey, rightKey);
+}
+
+function isPartialRequirementDuplicate(leftKey, rightKey) {
+  const [shorter, longer] = leftKey.length <= rightKey.length ? [leftKey, rightKey] : [rightKey, leftKey];
+  const shorterTokens = meaningfulTokens(shorter);
+  const longerTokens = meaningfulTokens(longer);
+  if (shorterTokens.length < 3 || longerTokens.length < 4) {
+    return false;
+  }
+  if (longer.includes(shorter)) {
+    return true;
+  }
+
+  const shared = shorterTokens.filter((token) => longerTokens.includes(token));
+  return shared.length / shorterTokens.length >= 0.85 && shorter.length / longer.length >= 0.35;
+}
+
+function chooseBestRequirementItem(left, right) {
+  const levelDelta = requirementLevelRank(right.level) - requirementLevelRank(left.level);
+  if (levelDelta > 0) {
+    return right;
+  }
+  if (levelDelta < 0) {
+    return left;
+  }
+
+  return String(right.text ?? '').length > String(left.text ?? '').length ? right : left;
+}
+
+function isLinkedInUiNoise(value) {
+  return linkedInUiNoisePatterns.some((pattern) => pattern.test(String(value ?? '')));
 }
 
 function buildTechnologyClaims(requirementItems) {
@@ -803,17 +1129,65 @@ function buildTechnologyClaims(requirementItems) {
     }
   }
 
-  return claims.filter(
-    (entry, index, list) =>
-      index ===
+  return canonicalizeTechnologyClaims(claims);
+}
+
+function canonicalizeTechnologyClaims(claims) {
+  const byEvidenceTechnology = new Map();
+
+  for (const claim of claims) {
+    const key = `${normalizeTechnology(claim.technology).toLowerCase()}::${normalizeEvidenceText(claim.evidence)}`;
+    const current = byEvidenceTechnology.get(key);
+    if (!current || requirementLevelRank(claim.requirementLevel) > requirementLevelRank(current.requirementLevel)) {
+      byEvidenceTechnology.set(key, claim);
+    }
+  }
+
+  return [...byEvidenceTechnology.values()].filter((claim, index, list) => {
+    if (isLessSpecificTechnologyClaim(claim, list)) {
+      return false;
+    }
+
+    return index ===
       list.findIndex(
         (candidate) =>
-          candidate.technology === entry.technology &&
-          candidate.requirementLevel === entry.requirementLevel &&
-          candidate.relationship === entry.relationship &&
-          candidate.evidence === entry.evidence,
-      ),
-  );
+          normalizeTechnology(candidate.technology).toLowerCase() === normalizeTechnology(claim.technology).toLowerCase() &&
+          candidate.requirementLevel === claim.requirementLevel &&
+          candidate.relationship === claim.relationship &&
+          normalizeEvidenceText(candidate.evidence) === normalizeEvidenceText(claim.evidence),
+      );
+  });
+}
+
+function isLessSpecificTechnologyClaim(claim, claims) {
+  const claimTechnology = normalizeTechnology(claim.technology);
+  const claimEvidence = normalizeEvidenceText(claim.evidence);
+  return claims.some((candidate) => {
+    const candidateTechnology = normalizeTechnology(candidate.technology);
+    return (
+      candidate !== claim &&
+      normalizeEvidenceText(candidate.evidence) === claimEvidence &&
+      candidateTechnology.toLowerCase() !== claimTechnology.toLowerCase() &&
+      candidateTechnology.toLowerCase().includes(claimTechnology.toLowerCase())
+    );
+  });
+}
+
+function requirementLevelRank(level) {
+  return {
+    mentioned: 1,
+    optional: 2,
+    preferred: 3,
+    required: 4,
+  }[level] ?? 0;
+}
+
+function normalizeEvidenceText(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[.,;:]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function isAlternativeRequirement(text, technologies) {
@@ -821,7 +1195,56 @@ function isAlternativeRequirement(text, technologies) {
     return false;
   }
 
-  return /\/|\bor\b|\bo\b|\betc\.?\b|\bsuch as\b|\blike\b/i.test(text);
+  if (/\s\/\s/.test(text)) {
+    return true;
+  }
+  if (hasSlashAlternativeTechnologyPair(text)) {
+    return true;
+  }
+  if (/\//.test(text) && technologies.length >= 3 && !/,|\band\b|\by\b/i.test(text)) {
+    return true;
+  }
+  if (hasExplicitChoiceOperator(text) && !/,/.test(text)) {
+    return true;
+  }
+  return /\bsuch as\b/i.test(text) && /\betc\.?\b/i.test(text);
+}
+
+function hasExplicitChoiceOperator(text) {
+  return /(^|[\s,(])(or|either)(?=[\s,)])|(^|[\s,(])o(?=[\s,)])/i.test(text);
+}
+
+function hasSlashAlternativeTechnologyPair(text) {
+  return /\b(?:gcp|aws)\s*\/\s*(?:aws|gcp)\b/i.test(text);
+}
+
+function meaningfulTokens(value) {
+  const stopWords = new Set([
+    'and',
+    'or',
+    'the',
+    'with',
+    'for',
+    'into',
+    'to',
+    'of',
+    'in',
+    'a',
+    'an',
+    'y',
+    'o',
+    'con',
+    'para',
+    'de',
+    'del',
+    'la',
+    'el',
+    'en',
+  ]);
+  return normalizeEvidenceText(value)
+    .split(/\s+/)
+    .map((token) => token.replace(/[^a-z0-9áéíóúñ.+#-]/gi, ''))
+    .filter((token) => token.length > 2 && !stopWords.has(token));
 }
 
 function dedupeStrings(values = []) {

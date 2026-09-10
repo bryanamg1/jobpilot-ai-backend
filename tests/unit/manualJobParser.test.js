@@ -14,6 +14,16 @@ Publicado hace 14 horas
 Node.js React MySQL Jest
 `.trim();
 
+function itemTexts(items) {
+  return items.map((item) => item.text);
+}
+
+function findTechnologyClaim(parsed, technology, evidencePart) {
+  return parsed.jobOffer.technologyClaims.find(
+    (claim) => claim.technology === technology && (!evidencePart || claim.evidence.includes(evidencePart)),
+  );
+}
+
 describe('manualJobParser', () => {
   it('prefers the structured snapshot title over the LinkedIn detail panel text block', () => {
     const parsed = parseManualJob({
@@ -282,7 +292,7 @@ describe('manualJobParser', () => {
       'GitFlow.',
       'Testing con Jest/RTL.',
       'Responsabilidades: Construir funcionalidades full stack y colaborar con producto.',
-      'Beneficios: Esquema por honorarios 100% remoto.',
+      'Beneficios: Esquema por honorarios 100% remoto (Latinoamérica) Participación en proyectos con tecnologías modernas Trabajo con herramientas de IA aplicadas al desarrollo Equipo y herramientas proporcionadas por cliente',
     ].join(' ');
 
     const parsed = parseManualJob({
@@ -318,7 +328,12 @@ describe('manualJobParser', () => {
         'Testing con Jest/RTL.',
       ]),
     );
-    expect(parsed.jobOffer.benefits).toEqual(['Esquema por honorarios 100% remoto.']);
+    expect(parsed.jobOffer.benefits).toEqual([
+      'Esquema por honorarios 100% remoto (Latinoamérica)',
+      'Participación en proyectos con tecnologías modernas',
+      'Trabajo con herramientas de IA aplicadas al desarrollo',
+      'Equipo y herramientas proporcionadas por cliente',
+    ]);
     expect(parsed.jobOffer.responsibilities).toEqual([
       'Construir funcionalidades full stack y colaborar con producto.',
     ]);
@@ -389,6 +404,11 @@ describe('manualJobParser', () => {
         alternativeGroup: mongoClaim.alternativeGroup,
       }),
     );
+
+    expect(findTechnologyClaim(parsed, 'Docker')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'GitFlow')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'Jest')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'React Testing Library')).toEqual(expect.objectContaining({ relationship: 'all' }));
   });
 
   it('detects headings with content in the same line in Spanish and English', () => {
@@ -454,5 +474,437 @@ describe('manualJobParser', () => {
     expect(b1.jobOffer.englishRequirement).toBe('intermediate');
     expect(b2.jobOffer.englishRequirement).toBe('fluent');
     expect(c1.jobOffer.englishRequirement).toBe('advanced');
+  });
+
+  it('infers middle seniority from the title without treating responsibility verbs as lead seniority', () => {
+    const middle = parseManualJob({
+      rawText: [
+        'Middle Node.js Engineer',
+        'Responsibilities: Lead the migration from a legacy service to Node.js.',
+        'Requirements: Node.js is required.',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/avenga-middle',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+      sourceType: 'LINKEDIN_JOBS_SUPERVISED',
+      structuredJob: {
+        title: 'Middle Node.js Engineer',
+        company: 'Avenga',
+        description: [
+          'Responsibilities: Lead the migration from a legacy service to Node.js.',
+          'Requirements: Node.js is required.',
+        ].join('\n'),
+      },
+    });
+    const middleStrong = parseManualJob({
+      rawText: [
+        'Middle-Strong Node.js Engineer',
+        'Responsibilities: Lead the migration from a legacy service to Node.js.',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/avenga-middle-strong',
+      sourceLabel: 'Manual',
+    });
+
+    expect(middle.jobOffer.seniority).toBe('mid');
+    expect(middleStrong.jobOffer.seniority).toBe('mid');
+  });
+
+  it('canonicalizes duplicated Avenga-style sections into one effective requirement per evidence', () => {
+    const description = [
+      'Responsibilities: Lead the migration from legacy services.',
+      'Requirements: 5+ years of experience with Node.js.',
+      'Requirements: AWS is required for cloud services.',
+      'Benefits: Remote work and learning budget.',
+    ].join(' ');
+    const duplicatedText = [
+      'Middle Node.js Engineer',
+      `Responsibilities: ${description}`,
+      `Requirements: ${description}`,
+      `Benefits: ${description}`,
+      `Description: ${description}`,
+    ].join('\n');
+
+    const parsed = parseManualJob({
+      rawText: duplicatedText,
+      sourceUrl: 'https://example.com/avenga-duplicated',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+    });
+
+    const requirementKeys = parsed.jobOffer.requirementItems.map((item) => `${item.requirementLevel}:${item.text}`);
+    const claimKeys = parsed.jobOffer.technologyClaims.map(
+      (claim) => `${claim.technology}:${claim.requirementLevel}:${claim.evidence}`,
+    );
+
+    expect(requirementKeys).toHaveLength(new Set(requirementKeys).size);
+    expect(claimKeys).toHaveLength(new Set(claimKeys).size);
+    expect(parsed.jobOffer.requirements.filter((item) => item === '5+ years of experience with Node.js.')).toHaveLength(1);
+    expect(parsed.jobOffer.requirements.filter((item) => item === 'AWS is required for cloud services.')).toHaveLength(1);
+    expect(parsed.jobOffer.optionalRequirements).not.toContain('5+ years of experience with Node.js.');
+    expect(parsed.jobOffer.optionalRequirements).not.toContain('AWS is required for cloud services.');
+  });
+
+  it('enforces segmentation invariants for fragments, partial duplicates and relationships', () => {
+    const parsed = parseManualJob({
+      rawText: [
+        'Backend Engineer',
+        'Requirements:',
+        'Solid technical scoping, requirements translation, and full SDLC ownership.',
+        'Solid technical scoping,',
+        'translation, and full SDLC ownership.',
+        'Experiencia con Docker, GitFlow y testing con Jest/RTL.',
+        'Preferred:',
+        'Next.js o React Native.',
+        'Responsibilities:',
+        'Translate requirements into prototypes and production-ready technical solutions;',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/invariants',
+      sourceLabel: 'Manual',
+    });
+
+    const requirementTexts = itemTexts(parsed.jobOffer.requirementItems);
+    expect(requirementTexts).toContain('Solid technical scoping, requirements translation, and full SDLC ownership.');
+    expect(requirementTexts).not.toContain('Solid technical scoping,');
+    expect(requirementTexts).not.toContain('translation, and full SDLC ownership.');
+    expect(requirementTexts).not.toContain('Requirements');
+    expect(requirementTexts).not.toContain('Preferred');
+    expect(requirementTexts).not.toContain('Responsibilities');
+    expect(requirementTexts.some((text) => text.endsWith(','))).toBe(false);
+    expect(parsed.jobOffer.requirements).not.toContain('Translate requirements into prototypes and production-ready technical solutions;');
+    expect(parsed.jobOffer.responsibilities).toContain('Translate requirements into prototypes and production-ready technical solutions;');
+
+    expect(parsed.jobOffer.requirementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: 'Solid technical scoping, requirements translation, and full SDLC ownership.',
+          category: 'general',
+        }),
+      ]),
+    );
+    expect(findTechnologyClaim(parsed, 'Docker')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'GitFlow')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'Jest')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'React Testing Library')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'Next.js')).toEqual(expect.objectContaining({ relationship: 'alternative' }));
+    expect(findTechnologyClaim(parsed, 'React Native')).toEqual(
+      expect.objectContaining({
+        relationship: 'alternative',
+        alternativeGroup: findTechnologyClaim(parsed, 'Next.js').alternativeGroup,
+      }),
+    );
+  });
+
+  it('resolves requirement level conflicts by keeping the strongest level for equivalent evidence', () => {
+    const parsed = parseManualJob({
+      rawText: [
+        'Backend Developer',
+        'Optional: AWS is required for cloud services.',
+        'Preferred: AWS is required for cloud services.',
+        'Requirements: AWS is required for cloud services.',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/conflicting-levels',
+      sourceLabel: 'Manual',
+    });
+
+    expect(parsed.jobOffer.requirements).toEqual(['AWS is required for cloud services.']);
+    expect(parsed.jobOffer.preferredRequirements).toEqual([]);
+    expect(parsed.jobOffer.optionalRequirements).toEqual([]);
+    expect(parsed.jobOffer.technologyClaims.filter((claim) => claim.technology === 'AWS')).toEqual([
+      expect.objectContaining({
+        requirementLevel: 'required',
+        evidence: 'AWS is required for cloud services.',
+      }),
+    ]);
+  });
+
+  it('does not create an explicit JavaScript claim when only Node.js is present', () => {
+    const parsed = parseManualJob({
+      rawText: [
+        'Middle Node.js Engineer',
+        'Requirements: Node.js is required for backend services.',
+      ].join('\n'),
+      sourceUrl: 'https://example.com/node-only',
+      sourceLabel: 'Manual',
+    });
+
+    expect(parsed.jobOffer.technologies).toContain('Node.js');
+    expect(parsed.jobOffer.technologyClaims).toEqual([
+      expect.objectContaining({
+        technology: 'Node.js',
+        requirementLevel: 'required',
+      }),
+    ]);
+    expect(parsed.jobOffer.technologyClaims.some((claim) => claim.technology === 'JavaScript')).toBe(false);
+  });
+
+  it('segments Avenga-style natural headings without fragments or section leakage', () => {
+    const description = [
+      'This is you',
+      '5+ years with Node.js.',
+      'NestJS or Express.',
+      'RESTful APIs.',
+      'Microservices.',
+      'Cloud deployment.',
+      'GitLab workflows.',
+      'Monitoring/alerting.',
+      'Solid technical scoping, requirements translation, and full SDLC ownership.',
+      'English intermediate.',
+      'Nice-to-have skills',
+      'AWS serverless.',
+      'TypeScript.',
+      'React.',
+      'Agile SDLC.',
+      'This is your role',
+      'Design and maintain BFF/backend services.',
+      'Build/document REST APIs.',
+      'Translate requirements into prototypes and production-ready technical solutions;',
+      'Ensure code quality with automated tests;',
+      'Deploy and manage cloud applications;',
+      'Improve performance and scalability;',
+      'Maintain documentation;',
+      'Collaborate with frontend teams and mentor peers.',
+    ].join(' ');
+
+    const parsed = parseManualJob({
+      rawText: ['Middle Node.js Engineer | Avenga', 'Company: Avenga', 'Description:', description].join('\n'),
+      sourceUrl: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4465551234',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+      sourceType: 'LINKEDIN_JOBS_SUPERVISED',
+      structuredJob: {
+        title: 'Middle Node.js Engineer',
+        company: 'Avenga',
+        location: 'Argentina',
+        seniority: 'mid',
+        description,
+      },
+    });
+
+    expect(parsed.jobOffer.requirements).toEqual(
+      expect.arrayContaining([
+        '5+ years with Node.js.',
+        'NestJS or Express.',
+        'RESTful APIs.',
+        'Microservices.',
+        'Cloud deployment.',
+        'GitLab workflows.',
+        'Monitoring/alerting.',
+        'Solid technical scoping, requirements translation, and full SDLC ownership.',
+        'English intermediate',
+      ]),
+    );
+    expect(parsed.jobOffer.preferredRequirements).toEqual(
+      expect.arrayContaining(['AWS serverless.', 'TypeScript.', 'React.', 'Agile SDLC']),
+    );
+    expect(parsed.jobOffer.responsibilities).toEqual(
+      expect.arrayContaining([
+        'Design and maintain BFF/backend services.',
+        'Build/document REST APIs.',
+        'Translate requirements into prototypes and production-ready technical solutions;',
+        'Ensure code quality with automated tests;',
+        'Deploy and manage cloud applications;',
+        'Improve performance and scalability;',
+        'Maintain documentation;',
+        'Collaborate with frontend teams and mentor peers.',
+      ]),
+    );
+
+    const requirementTexts = itemTexts(parsed.jobOffer.requirementItems);
+    expect(requirementTexts).not.toContain('This is you');
+    expect(requirementTexts).not.toContain('This is your role');
+    expect(requirementTexts).not.toContain('Translate');
+    expect(requirementTexts).not.toContain('into prototypes and production-ready technical solutions;');
+    expect(requirementTexts).not.toContain('Solid technical scoping,');
+    expect(parsed.jobOffer.requirements).not.toContain('Translate requirements into prototypes and production-ready technical solutions;');
+    expect(parsed.jobOffer.preferredRequirements).not.toContain('This is your role');
+    expect(parsed.jobOffer.preferredRequirements).not.toContain('Design and maintain BFF/backend services.');
+
+    expect(parsed.jobOffer.requirementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: '5+ years with Node.js.',
+          category: 'experience',
+          minYears: 5,
+        }),
+        expect.objectContaining({
+          text: 'English intermediate',
+          category: 'language',
+        }),
+        expect.objectContaining({
+          text: 'Solid technical scoping, requirements translation, and full SDLC ownership.',
+          category: 'general',
+        }),
+      ]),
+    );
+    expect(findTechnologyClaim(parsed, 'NestJS')).toEqual(expect.objectContaining({ relationship: 'alternative' }));
+    expect(findTechnologyClaim(parsed, 'Express')).toEqual(
+      expect.objectContaining({
+        relationship: 'alternative',
+        alternativeGroup: findTechnologyClaim(parsed, 'NestJS').alternativeGroup,
+      }),
+    );
+    expect(findTechnologyClaim(parsed, 'Node.js')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'GitLab')).toEqual(expect.objectContaining({ relationship: 'all' }));
+  });
+
+  it('parses the Wispok supervised description into required, preferred and responsibility segments', () => {
+    const description = [
+      'Rol: Desarrollador Backend Mid-Level',
+      'Modalidad: Híbrida',
+      'Experiencia requerida: 3 a 5 años en desarrollo backend profesional',
+      'Buscamos a alguien con experiencia real en: Dominio de JavaScript y TypeScript Desarrollo de APIs RESTful usando Express.js y NestJS Conocimiento de bases de datos relaciones y no relacionales. Conocimiento en uso de queues y procesamiento de tareas asíncronas. Comprensión profunda de principios SOLID, patrones de diseño, DDD, clean architecture, patrón hexagonal. Fluidez con Git, integración continua y metodologías ágiles como Scrum o Kanban.',
+      'Deseable: Conocimientos prácticos de servicios en AWS.',
+      'En este rol también estarás a cargo de: Diseñar e implementar arquitecturas desacopladas y escalables Mantener un alto estándar de calidad de código con pruebas automatizadas Colaborar con frontend, QA y producto en soluciones integrales Documentar tus desarrollos y participar activamente en la evolución del stack',
+      'Lo que ofrecemos: Esquema de trabajo híbrido.',
+    ].join(' ');
+
+    const parsed = parseManualJob({
+      rawText: ['Backend (Mid) | Wispok', 'Company: Wispok', 'Description:', description].join('\n'),
+      sourceUrl: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4462986553',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+      sourceType: 'LINKEDIN_JOBS_SUPERVISED',
+      structuredJob: {
+        title: 'Backend (Mid) | Wispok',
+        company: 'Wispok',
+        location: 'usa',
+        technologies: ['JavaScript', 'TypeScript', 'Node.js', 'React', 'AWS', 'Git', 'REST API', 'Express', 'Next.js'],
+        description,
+      },
+    });
+
+    expect(parsed.jobOffer.seniority).toBe('mid');
+    expect(parsed.jobOffer.modality).toEqual(['hybrid']);
+    expect(parsed.jobOffer.requirements).toEqual(
+      expect.arrayContaining([
+        '3 a 5 años en desarrollo backend profesional',
+        'Dominio de JavaScript y TypeScript',
+        'Desarrollo de APIs RESTful usando Express.js y NestJS',
+        'Conocimiento de bases de datos relaciones y no relacionales.',
+        'Conocimiento en uso de queues y procesamiento de tareas asíncronas.',
+        'Comprensión profunda de principios SOLID, patrones de diseño, DDD, clean architecture, patrón hexagonal.',
+        'Fluidez con Git, integración continua y metodologías ágiles como Scrum o Kanban.',
+      ]),
+    );
+    expect(parsed.jobOffer.preferredRequirements).toEqual(['Conocimientos prácticos de servicios en AWS.']);
+    expect(parsed.jobOffer.responsibilities).toEqual(
+      expect.arrayContaining([
+        'Diseñar e implementar arquitecturas desacopladas y escalables',
+        'Mantener un alto estándar de calidad de código con pruebas automatizadas',
+        'Colaborar con frontend, QA y producto en soluciones integrales',
+        'Documentar tus desarrollos y participar activamente en la evolución del stack',
+      ]),
+    );
+    expect(parsed.jobOffer.requirementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: '3 a 5 años en desarrollo backend profesional',
+          requirementLevel: 'required',
+          minYears: 3,
+        }),
+      ]),
+    );
+    expect(parsed.jobOffer.technologyClaims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ technology: 'JavaScript', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'TypeScript', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'REST API', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Express', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'NestJS', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Git', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'AWS', requirementLevel: 'preferred' }),
+      ]),
+    );
+    expect(findTechnologyClaim(parsed, 'Git')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'Scrum')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'Kanban')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(parsed.jobOffer.technologyClaims.some((claim) => claim.technology === 'AWS' && claim.requirementLevel === 'required')).toBe(false);
+  });
+
+  it('parses the Artax supervised description and filters LinkedIn UI noise', () => {
+    const description = [
+      'Modalidad: Híbrido',
+      'Responsabilidades Desarrollar y mantener servicios fullstack utilizando Node.js y Next.js Diseñar APIs REST eficientes y seguras y participar en integraciones SOAP Aplicar buenas prácticas de programación, diseño limpio y uso de patrones Ejecutar consultas SQL avanzadas y participar en diseño de bases de datos Colaborar con el equipo en entornos ágiles Scrum e iteraciones planificadas',
+      'Requisitos excluyentes +5 años de experiencia en desarrollo fullstack Conocimientos avanzados en Node.js, TypeScript, Express y Next.js Dominio de SQL Experiencia en diseño de APIs REST y SOAP Experiencia trabajando con metodologías ágiles Scrum Formación en Ingeniería, Lic. en Sistemas o carreras afines',
+      'Requisitos deseables Experiencia en Python para automatizaciones o scripting Conocimientos básicos/intermedios en Docker, Kubernetes y Elastic Stack Manejo de herramientas como Postman, Git y UML',
+      'A tu perfil y tu currículum les faltan algunos requisitos, aunque podrían tenerte en cuenta por tu trayectoria.',
+      'Mira una comparación con otros solicitantes',
+    ].join(' ');
+
+    const parsed = parseManualJob({
+      rawText: ['Fullstack Developer (Node - Next.js) | Artax Advisors', 'Description:', description].join('\n'),
+      sourceUrl: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4460621968',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+      sourceType: 'LINKEDIN_JOBS_SUPERVISED',
+      structuredJob: {
+        title: 'Fullstack Developer (Node - Next.js) | Artax Advisors',
+        company: 'Artax Advisors',
+        location: 'Buenos Aires',
+        seniority: 'senior',
+        technologies: ['TypeScript', 'Node.js', 'Express', 'React', 'Docker', 'AWS', 'Git', 'Next.js', 'REST API', 'Python'],
+        description,
+        requirements: [
+          'A tu perfil y tu currículum les faltan algunos requisitos, aunque podrían tenerte en cuenta por tu trayectoria.',
+          '💡 Requisitos excluyentes',
+          '✨ Requisitos deseables',
+        ],
+      },
+    });
+
+    expect(parsed.jobOffer.seniority).toBe('senior');
+    expect(parsed.jobOffer.modality).toEqual(['hybrid']);
+    expect(parsed.jobOffer.requirements).toEqual(
+      expect.arrayContaining([
+        '+5 años de experiencia en desarrollo fullstack',
+        'Conocimientos avanzados en Node.js, TypeScript, Express y Next.js',
+        'Dominio de SQL',
+        'Experiencia en diseño de APIs REST y SOAP',
+        'Experiencia trabajando con metodologías ágiles Scrum',
+        'Formación en Ingeniería, Lic. en Sistemas o carreras afines',
+      ]),
+    );
+    expect(parsed.jobOffer.preferredRequirements).toEqual(
+      expect.arrayContaining([
+        'Experiencia en Python para automatizaciones o scripting',
+        'Conocimientos básicos/intermedios en Docker, Kubernetes y Elastic Stack',
+        'Manejo de herramientas como Postman, Git y UML',
+      ]),
+    );
+    expect(parsed.jobOffer.responsibilities).toEqual(
+      expect.arrayContaining([
+        'Desarrollar y mantener servicios fullstack utilizando Node.js y Next.js',
+        'Diseñar APIs REST eficientes y seguras y participar en integraciones SOAP',
+        'Ejecutar consultas SQL avanzadas y participar en diseño de bases de datos',
+      ]),
+    );
+    expect(parsed.jobOffer.requirements.join(' ')).not.toContain('A tu perfil');
+    expect(parsed.jobOffer.requirements).not.toContain('Requisitos excluyentes');
+    expect(parsed.jobOffer.requirements).not.toContain('Requisitos deseables');
+    expect(parsed.jobOffer.requirementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: '+5 años de experiencia en desarrollo fullstack',
+          requirementLevel: 'required',
+          minYears: 5,
+        }),
+      ]),
+    );
+    expect(parsed.jobOffer.technologyClaims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ technology: 'Node.js', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'TypeScript', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Express', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Next.js', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'SQL', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'REST API', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'SOAP API', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Scrum', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Python', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'Docker', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'Kubernetes', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'Elastic Stack', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'Postman', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'Git', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'UML', requirementLevel: 'preferred' }),
+      ]),
+    );
+    expect(findTechnologyClaim(parsed, 'REST API', 'REST y SOAP')).toEqual(expect.objectContaining({ relationship: 'all' }));
+    expect(findTechnologyClaim(parsed, 'SOAP API', 'REST y SOAP')).toEqual(expect.objectContaining({ relationship: 'all' }));
   });
 });
