@@ -6,10 +6,12 @@ const technologyAliases = {
   'TypeScript': ['typescript', 'ts'],
   'Node.js': ['node.js', 'nodejs', 'node js', 'node'],
   Express: ['express', 'express.js', 'expressjs'],
+  NestJS: ['nestjs', 'nest.js', 'nest js'],
   React: ['react', 'react.js', 'reactjs'],
   Vite: ['vite'],
   'React Router': ['react router', 'react-router', 'reactrouter'],
   MySQL: ['mysql', 'my sql'],
+  SQL: ['sql'],
   MongoDB: ['mongodb', 'mongo db', 'mongo'],
   Redis: ['redis'],
   Docker: ['docker'],
@@ -29,7 +31,20 @@ const technologyAliases = {
   'React Native': ['react native', 'react-native'],
   GraphQL: ['graphql', 'graph ql'],
   'REST API': ['rest api', 'rest apis', 'apis rest', 'api rest', 'restful', 'rest'],
+  'SOAP API': ['soap api', 'soap apis', 'soap'],
   'React Testing Library': ['react testing library', 'rtl'],
+  Kubernetes: ['kubernetes', 'k8s'],
+  'Elastic Stack': ['elastic stack', 'elasticsearch'],
+  Postman: ['postman'],
+  UML: ['uml'],
+  Scrum: ['scrum'],
+  Kanban: ['kanban'],
+  'CI/CD': ['ci/cd', 'continuous integration', 'integracion continua', 'integración continua'],
+  SOLID: ['solid'],
+  DDD: ['ddd', 'domain driven design'],
+  'Clean Architecture': ['clean architecture', 'arquitectura limpia'],
+  'Hexagonal Architecture': ['hexagonal architecture', 'arquitectura hexagonal', 'patron hexagonal', 'patrón hexagonal'],
+  Queues: ['queues', 'colas'],
   GitFlow: ['gitflow', 'git flow'],
   Figma: ['figma'],
   Git: ['git'],
@@ -49,28 +64,39 @@ const ignoredTitlePatterns = [
 ];
 
 const companyFallbackPatterns = [/^(we are|estamos|somos|buscamos|hiring)\b/i];
+const linkedInUiNoisePatterns = [
+  /a tu perfil\s+a?\s*y\s+tu curr[ií]culum les faltan/i,
+  /mira una comparaci[oó]n con (otros solicitantes|otras personas)/i,
+  /mostrar informaci[oó]n premium/i,
+  /applicant insights/i,
+  /candidate insights/i,
+  /basado en los datos de linkedin/i,
+  /figurar[ií]as entre los principales solicitantes/i,
+  /try premium/i,
+  /premium/i,
+];
 
 const modalityPatterns = [
   { value: 'remote', patterns: ['remote', 'remoto'] },
-  { value: 'hybrid', patterns: ['hybrid', 'hibrido', 'híbrido'] },
+  { value: 'hybrid', patterns: ['hybrid', 'hibrido', 'híbrido', 'hibrida', 'híbrida'] },
   { value: 'onsite', patterns: ['onsite', 'presencial', 'on site'] },
 ];
 const requirementSectionPatterns = {
   required: [
     /^(requirements?|must[- ]?have|required|minimum requirements?|minimum qualifications?|qualifications?|what you need|profile required)\s*:?\s*$/i,
-    /^(requisitos?|perfil requerido|excluyentes?|obligatorios?)\s*:?\s*$/i,
+    /^(requisitos?(?:\s+excluyentes?)?|perfil requerido|experiencia requerida|buscamos a alguien con experiencia real en|excluyentes?|obligatorios?)\s*:?\s*$/i,
   ],
   preferred: [
     /^(preferred qualifications?|nice[- ]?to[- ]?have|preferred|bonus points?|bonus|plus)\s*:?\s*$/i,
-    /^(preferidos?|deseables?|ser[aá] un plus|valorado)\s*:?\s*$/i,
+    /^(requisitos?\s+deseables?|preferidos?|deseables?|deseable|ser[aá] un plus|valorado)\s*:?\s*$/i,
   ],
   responsibilities: [
     /^(responsibilities|duties|what you'?ll do|you will|about the role|role overview)\s*:?\s*$/i,
-    /^(responsabilidades|tareas|funciones|qu[eé] har[aá]s)\s*:?\s*$/i,
+    /^(responsabilidades|tareas|funciones|qu[eé] har[aá]s|en este rol tambi[eé]n estar[aá]s a cargo de)\s*:?\s*$/i,
   ],
   benefits: [
     /^(benefits?|perks?|what we offer|why join|why you'?ll love|our offer)\s*:?\s*$/i,
-    /^(beneficios?|ofrecemos|qu[eé] ofrecemos)\s*:?\s*$/i,
+    /^(beneficios?|ofrecemos|qu[eé] ofrecemos|lo que ofrecemos)\s*:?\s*$/i,
   ],
   optional: [/^(optional|desirable|opcional)\s*:?\s*$/i],
 };
@@ -82,6 +108,9 @@ const inlineSectionHeadings = [
   { section: 'required', label: 'Must have' },
   { section: 'required', label: 'Requirements' },
   { section: 'required', label: 'Qualifications' },
+  { section: 'required', label: 'Requisitos excluyentes' },
+  { section: 'required', label: 'Experiencia requerida' },
+  { section: 'required', label: 'Buscamos a alguien con experiencia real en' },
   { section: 'required', label: 'Requisitos' },
   { section: 'general', label: 'Description' },
   { section: 'general', label: 'Descripcion' },
@@ -90,7 +119,9 @@ const inlineSectionHeadings = [
   { section: 'preferred', label: 'Nice-to-have' },
   { section: 'preferred', label: 'Nice to have' },
   { section: 'preferred', label: 'Preferidos' },
+  { section: 'preferred', label: 'Requisitos deseables' },
   { section: 'preferred', label: 'Deseables' },
+  { section: 'preferred', label: 'Deseable' },
   { section: 'preferred', label: 'Preferred' },
   { section: 'preferred', label: 'Bonus' },
   { section: 'preferred', label: 'Plus' },
@@ -100,9 +131,11 @@ const inlineSectionHeadings = [
   { section: 'responsibilities', label: "What you'll do" },
   { section: 'responsibilities', label: 'Responsibilities' },
   { section: 'responsibilities', label: 'Duties' },
+  { section: 'responsibilities', label: 'En este rol también estarás a cargo de' },
   { section: 'responsibilities', label: 'Responsabilidades' },
   { section: 'responsibilities', label: 'Tareas' },
   { section: 'benefits', label: 'What we offer' },
+  { section: 'benefits', label: 'Lo que ofrecemos' },
   { section: 'benefits', label: 'Benefits' },
   { section: 'benefits', label: 'Perks' },
   { section: 'benefits', label: 'Beneficios' },
@@ -143,17 +176,24 @@ const inlineBenefitPatterns = [/\bbenefit\b/i, /\bperk\b/i, /\bwe offer\b/i, /\b
 const labelOnlyPatterns = [
   /^requirements?\s*:?\s*$/i,
   /^requisitos?\s*:?\s*$/i,
+  /^requisitos?\s+excluyentes?\s*:?\s*$/i,
+  /^requisitos?\s+deseables?\s*:?\s*$/i,
+  /^experiencia requerida\s*:?\s*$/i,
+  /^buscamos a alguien con experiencia real en\s*:?\s*$/i,
   /^description\s*:?\s*$/i,
   /^descripci[oó]n\s*:?\s*$/i,
   /^perfil requerido\s*:?\s*$/i,
   /^responsibilities\s*:?\s*$/i,
   /^responsabilidades\s*:?\s*$/i,
+  /^en este rol tambi[eé]n estar[aá]s a cargo de\s*:?\s*$/i,
   /^benefits?\s*:?\s*$/i,
   /^beneficios?\s*:?\s*$/i,
+  /^lo que ofrecemos\s*:?\s*$/i,
   /^preferred qualifications?\s*:?\s*$/i,
   /^nice[- ]?to[- ]?have\s*:?\s*$/i,
   /^optional\s*:?\s*$/i,
   /^opcional\s*:?\s*$/i,
+  /^deseable\s*:?\s*$/i,
   /^qualifications?\s*:?\s*$/i,
 ];
 const englishRequirementPatterns = [
@@ -187,7 +227,7 @@ export function parseManualJob({ rawText, sourceUrl, sourceLabel, sourceType, st
   const lines = toLines(rawText);
 
   const structuredHints = normalizeStructuredJobHints(structuredJob);
-  const analysisText = buildAnalysisText(rawText, structuredHints);
+  const analysisText = buildAnalysisText(rawText, structuredHints, sourceType || sourceTypeOrDefault(sourceLabel));
   const analysisLines = toLines(analysisText);
   const titleCandidateLines = selectTitleCandidateLines(lines);
   const lowerText = analysisText.toLowerCase();
@@ -523,15 +563,48 @@ function normalizeStructuredJobHints(structuredJob) {
   };
 }
 
-function buildAnalysisText(rawText, structuredHints) {
-  const prioritized = dedupeAnalysisSegments([
-    structuredHints.description,
+function buildAnalysisText(rawText, structuredHints, sourceType) {
+  const isSupervisedLinkedIn = sourceType === 'LINKEDIN_JOBS_SUPERVISED';
+  const description = structuredHints.description;
+  const structuredArrays = [
     ...structuredHints.requirements,
     ...structuredHints.responsibilities,
     ...structuredHints.benefits,
+  ].filter((value) => isValidStructuredArrayItem(value, description, isSupervisedLinkedIn));
+  const prioritized = dedupeAnalysisSegments([
+    description,
+    ...structuredArrays,
   ]);
 
   return prioritized.length ? prioritized.join('\n') : rawText;
+}
+
+function isValidStructuredArrayItem(value, description, isSupervisedLinkedIn) {
+  const cleaned = cleanMultilineText(value);
+  if (!cleaned || isLinkedInUiNoise(cleaned)) {
+    return false;
+  }
+  if (!isSupervisedLinkedIn) {
+    return true;
+  }
+
+  const descriptionKey = normalizeEvidenceText(description);
+  const itemKey = normalizeEvidenceText(cleaned);
+  const headingMatches = inlineSectionHeadings.filter((heading) =>
+    new RegExp(`\\b${escapeRegExp(heading.label)}\\b`, 'i').test(cleaned),
+  ).length;
+
+  if (descriptionKey && itemKey === descriptionKey) {
+    return false;
+  }
+  if (descriptionKey && cleaned.length > String(description ?? '').length * 0.65) {
+    return false;
+  }
+  if (headingMatches >= 2) {
+    return false;
+  }
+
+  return !/(benefits?|responsibilities|requisitos?\s+deseables?|requisitos?\s+excluyentes?|beneficios?|responsabilidades)\s*:/i.test(cleaned);
 }
 
 function dedupeAnalysisSegments(values) {
@@ -596,12 +669,15 @@ function buildStructuredSections({ analysisLines, structuredHints }) {
       continue;
     }
 
-    if (currentSection === 'responsibilities' || inlineResponsibilityPatterns.some((pattern) => pattern.test(cleaned))) {
+    if (
+      currentSection === 'responsibilities' ||
+      (currentSection === 'general' && inlineResponsibilityPatterns.some((pattern) => pattern.test(cleaned)))
+    ) {
       appendUnique(buckets.responsibilities, cleaned);
       continue;
     }
 
-    if (currentSection === 'benefits' || inlineBenefitPatterns.some((pattern) => pattern.test(cleaned))) {
+    if (currentSection === 'benefits' || (currentSection === 'general' && inlineBenefitPatterns.some((pattern) => pattern.test(cleaned)))) {
       appendUnique(buckets.benefits, cleaned);
       continue;
     }
@@ -627,8 +703,9 @@ function buildStructuredSections({ analysisLines, structuredHints }) {
 }
 
 function classifySectionHeading(line) {
+  const normalizedLine = normalizeHeadingLine(line);
   for (const [section, patterns] of Object.entries(requirementSectionPatterns)) {
-    if (patterns.some((pattern) => pattern.test(line))) {
+    if (patterns.some((pattern) => pattern.test(normalizedLine))) {
       return section;
     }
   }
@@ -667,8 +744,12 @@ function splitInlineSectionBoundaries(line) {
   }
 
   for (const heading of inlineSectionHeadings) {
-    const pattern = new RegExp(`\\b${escapeRegExp(heading.label)}\\s*:\\s*`, 'gi');
-    value = value.replace(pattern, `\n${heading.label}:\n`);
+    const colonPattern = new RegExp(`\\b${escapeRegExp(heading.label)}\\s*:\\s*`, 'gi');
+    value = value.replace(colonPattern, `\n${heading.label}:\n`);
+    if (isStrongInlineBoundary(heading.label)) {
+      const inlinePattern = new RegExp(`(^|[.!?]\\s+|\\s+)([\\p{Extended_Pictographic}\\p{So}]*\\s*)${escapeRegExp(heading.label)}\\s+(?=[A-ZÁÉÍÓÚÑa-záéíóúñ+0-9])`, 'giu');
+      value = value.replace(inlinePattern, `\n${heading.label}:\n`);
+    }
   }
 
   return value
@@ -706,10 +787,65 @@ function splitRequirementAtoms(value) {
     return [];
   }
 
-  return cleaned
+  const segmented = insertSemanticItemBoundaries(cleaned);
+  return segmented
     .split(/\n|(?<=[.;])\s+(?=[A-ZÁÉÍÓÚÑ0-9])/u)
     .map(cleanRequirementLikeText)
     .filter(Boolean);
+}
+
+function insertSemanticItemBoundaries(value) {
+  const starters = [
+    'Dominio de',
+    'Desarrollo de',
+    'Desarrollo y consumo de',
+    'Conocimiento de',
+    'Conocimiento en',
+    'Conocimientos de',
+    'Conocimientos avanzados en',
+    'Conocimientos básicos/intermedios en',
+    'Conocimientos basicos/intermedios en',
+    'Conocimientos prácticos de',
+    'Conocimientos practicos de',
+    'Comprension profunda de',
+    'Comprensión profunda de',
+    'Fluidez con',
+    'Experiencia en',
+    'Experiencia trabajando',
+    'Manejo de',
+    'Formacion en',
+    'Formación en',
+    'Diseñar',
+    'Disenar',
+    'Implementar',
+    'Mantener',
+    'Colaborar',
+    'Documentar',
+    'Participar',
+    'Ejecutar',
+    'Aplicar',
+  ];
+  let segmented = value;
+  for (const starter of starters) {
+    const pattern = new RegExp(`\\s+(${escapeRegExp(starter)}\\b)`, 'g');
+    segmented = segmented.replace(pattern, '\n$1');
+  }
+  segmented = segmented
+    .replace(/\s+(A tu perfil\s+a?\s*y\s+tu curr[ií]culum les faltan)/gi, '\n$1')
+    .replace(/\s+(Mira una comparaci[oó]n con (?:otros solicitantes|otras personas))/gi, '\n$1')
+    .replace(/\s+(Applicant insights|Candidate insights|Mostrar informaci[oó]n Premium)/gi, '\n$1');
+  return segmented;
+}
+
+function normalizeHeadingLine(value) {
+  return String(value ?? '')
+    .replace(/^[\p{Extended_Pictographic}\p{So}\s]+/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isStrongInlineBoundary(label) {
+  return !/^(description|descripcion|descripción|preferred|optional|desirable|bonus|plus|tareas)$/i.test(label);
 }
 
 function isLabelOnly(line) {
@@ -759,11 +895,13 @@ function appendRequirementCandidate(buckets, text, level) {
 }
 
 function cleanRequirementLikeText(value) {
-  const cleaned = cleanScalar(String(value ?? '').replace(/^[-*•]\s*/, ''));
+  const cleaned = cleanScalar(
+    normalizeHeadingLine(String(value ?? '').replace(/^[-*•]\s*/, '')),
+  );
   if (!cleaned) {
     return null;
   }
-  if (labelOnlyPatterns.some((pattern) => pattern.test(cleaned))) {
+  if (labelOnlyPatterns.some((pattern) => pattern.test(cleaned)) || isLinkedInUiNoise(cleaned)) {
     return null;
   }
   if (cleaned.length > 360) {
@@ -788,7 +926,7 @@ function inferRequirementCategory(text) {
 
 function extractMinimumYears(text) {
   const value = String(text ?? '');
-  const rangeMatch = value.match(/\b(\d+)\s*[-–]\s*(\d+)\s*(?:years?|a[nñ]os)\b/i);
+  const rangeMatch = value.match(/\b(\d+)\s*(?:[-–]|a|to)\s*(\d+)\s*(?:years?|a[nñ]os)\b/i);
   if (rangeMatch) {
     return Number(rangeMatch[1]);
   }
@@ -821,6 +959,10 @@ function canonicalizeRequirementItems(items) {
   }
 
   return [...byEvidence.values()];
+}
+
+function isLinkedInUiNoise(value) {
+  return linkedInUiNoisePatterns.some((pattern) => pattern.test(String(value ?? '')));
 }
 
 function buildTechnologyClaims(requirementItems) {

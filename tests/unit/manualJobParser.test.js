@@ -564,4 +564,163 @@ describe('manualJobParser', () => {
     ]);
     expect(parsed.jobOffer.technologyClaims.some((claim) => claim.technology === 'JavaScript')).toBe(false);
   });
+
+  it('parses the Wispok supervised description into required, preferred and responsibility segments', () => {
+    const description = [
+      'Rol: Desarrollador Backend Mid-Level',
+      'Modalidad: Híbrida',
+      'Experiencia requerida: 3 a 5 años en desarrollo backend profesional',
+      'Buscamos a alguien con experiencia real en: Dominio de JavaScript y TypeScript Desarrollo de APIs RESTful usando Express.js y NestJS Conocimiento de bases de datos relaciones y no relacionales. Conocimiento en uso de queues y procesamiento de tareas asíncronas. Comprensión profunda de principios SOLID, patrones de diseño, DDD, clean architecture, patrón hexagonal. Fluidez con Git, integración continua y metodologías ágiles como Scrum o Kanban.',
+      'Deseable: Conocimientos prácticos de servicios en AWS.',
+      'En este rol también estarás a cargo de: Diseñar e implementar arquitecturas desacopladas y escalables Mantener un alto estándar de calidad de código con pruebas automatizadas Colaborar con frontend, QA y producto en soluciones integrales Documentar tus desarrollos y participar activamente en la evolución del stack',
+      'Lo que ofrecemos: Esquema de trabajo híbrido.',
+    ].join(' ');
+
+    const parsed = parseManualJob({
+      rawText: ['Backend (Mid) | Wispok', 'Company: Wispok', 'Description:', description].join('\n'),
+      sourceUrl: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4462986553',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+      sourceType: 'LINKEDIN_JOBS_SUPERVISED',
+      structuredJob: {
+        title: 'Backend (Mid) | Wispok',
+        company: 'Wispok',
+        location: 'usa',
+        technologies: ['JavaScript', 'TypeScript', 'Node.js', 'React', 'AWS', 'Git', 'REST API', 'Express', 'Next.js'],
+        description,
+      },
+    });
+
+    expect(parsed.jobOffer.seniority).toBe('mid');
+    expect(parsed.jobOffer.modality).toEqual(['hybrid']);
+    expect(parsed.jobOffer.requirements).toEqual(
+      expect.arrayContaining([
+        '3 a 5 años en desarrollo backend profesional',
+        'Dominio de JavaScript y TypeScript',
+        'Desarrollo de APIs RESTful usando Express.js y NestJS',
+        'Conocimiento de bases de datos relaciones y no relacionales.',
+        'Conocimiento en uso de queues y procesamiento de tareas asíncronas.',
+        'Comprensión profunda de principios SOLID, patrones de diseño, DDD, clean architecture, patrón hexagonal.',
+        'Fluidez con Git, integración continua y metodologías ágiles como Scrum o Kanban.',
+      ]),
+    );
+    expect(parsed.jobOffer.preferredRequirements).toEqual(['Conocimientos prácticos de servicios en AWS.']);
+    expect(parsed.jobOffer.responsibilities).toEqual(
+      expect.arrayContaining([
+        'Diseñar e implementar arquitecturas desacopladas y escalables',
+        'Mantener un alto estándar de calidad de código con pruebas automatizadas',
+        'Colaborar con frontend, QA y producto en soluciones integrales',
+        'Documentar tus desarrollos y participar activamente en la evolución del stack',
+      ]),
+    );
+    expect(parsed.jobOffer.requirementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: '3 a 5 años en desarrollo backend profesional',
+          requirementLevel: 'required',
+          minYears: 3,
+        }),
+      ]),
+    );
+    expect(parsed.jobOffer.technologyClaims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ technology: 'JavaScript', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'TypeScript', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'REST API', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Express', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'NestJS', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Git', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'AWS', requirementLevel: 'preferred' }),
+      ]),
+    );
+    expect(parsed.jobOffer.technologyClaims.some((claim) => claim.technology === 'AWS' && claim.requirementLevel === 'required')).toBe(false);
+  });
+
+  it('parses the Artax supervised description and filters LinkedIn UI noise', () => {
+    const description = [
+      'Modalidad: Híbrido',
+      'Responsabilidades Desarrollar y mantener servicios fullstack utilizando Node.js y Next.js Diseñar APIs REST eficientes y seguras y participar en integraciones SOAP Aplicar buenas prácticas de programación, diseño limpio y uso de patrones Ejecutar consultas SQL avanzadas y participar en diseño de bases de datos Colaborar con el equipo en entornos ágiles Scrum e iteraciones planificadas',
+      'Requisitos excluyentes +5 años de experiencia en desarrollo fullstack Conocimientos avanzados en Node.js, TypeScript, Express y Next.js Dominio de SQL Experiencia en diseño de APIs REST y SOAP Experiencia trabajando con metodologías ágiles Scrum Formación en Ingeniería, Lic. en Sistemas o carreras afines',
+      'Requisitos deseables Experiencia en Python para automatizaciones o scripting Conocimientos básicos/intermedios en Docker, Kubernetes y Elastic Stack Manejo de herramientas como Postman, Git y UML',
+      'A tu perfil y tu currículum les faltan algunos requisitos, aunque podrían tenerte en cuenta por tu trayectoria.',
+      'Mira una comparación con otros solicitantes',
+    ].join(' ');
+
+    const parsed = parseManualJob({
+      rawText: ['Fullstack Developer (Node - Next.js) | Artax Advisors', 'Description:', description].join('\n'),
+      sourceUrl: 'https://www.linkedin.com/jobs/search-results/?currentJobId=4460621968',
+      sourceLabel: 'LinkedIn Jobs supervised session',
+      sourceType: 'LINKEDIN_JOBS_SUPERVISED',
+      structuredJob: {
+        title: 'Fullstack Developer (Node - Next.js) | Artax Advisors',
+        company: 'Artax Advisors',
+        location: 'Buenos Aires',
+        seniority: 'senior',
+        technologies: ['TypeScript', 'Node.js', 'Express', 'React', 'Docker', 'AWS', 'Git', 'Next.js', 'REST API', 'Python'],
+        description,
+        requirements: [
+          'A tu perfil y tu currículum les faltan algunos requisitos, aunque podrían tenerte en cuenta por tu trayectoria.',
+          '💡 Requisitos excluyentes',
+          '✨ Requisitos deseables',
+        ],
+      },
+    });
+
+    expect(parsed.jobOffer.seniority).toBe('senior');
+    expect(parsed.jobOffer.modality).toEqual(['hybrid']);
+    expect(parsed.jobOffer.requirements).toEqual(
+      expect.arrayContaining([
+        '+5 años de experiencia en desarrollo fullstack',
+        'Conocimientos avanzados en Node.js, TypeScript, Express y Next.js',
+        'Dominio de SQL',
+        'Experiencia en diseño de APIs REST y SOAP',
+        'Experiencia trabajando con metodologías ágiles Scrum',
+        'Formación en Ingeniería, Lic. en Sistemas o carreras afines',
+      ]),
+    );
+    expect(parsed.jobOffer.preferredRequirements).toEqual(
+      expect.arrayContaining([
+        'Experiencia en Python para automatizaciones o scripting',
+        'Conocimientos básicos/intermedios en Docker, Kubernetes y Elastic Stack',
+        'Manejo de herramientas como Postman, Git y UML',
+      ]),
+    );
+    expect(parsed.jobOffer.responsibilities).toEqual(
+      expect.arrayContaining([
+        'Desarrollar y mantener servicios fullstack utilizando Node.js y Next.js',
+        'Diseñar APIs REST eficientes y seguras y participar en integraciones SOAP',
+        'Ejecutar consultas SQL avanzadas y participar en diseño de bases de datos',
+      ]),
+    );
+    expect(parsed.jobOffer.requirements.join(' ')).not.toContain('A tu perfil');
+    expect(parsed.jobOffer.requirements).not.toContain('Requisitos excluyentes');
+    expect(parsed.jobOffer.requirements).not.toContain('Requisitos deseables');
+    expect(parsed.jobOffer.requirementItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: '+5 años de experiencia en desarrollo fullstack',
+          requirementLevel: 'required',
+          minYears: 5,
+        }),
+      ]),
+    );
+    expect(parsed.jobOffer.technologyClaims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ technology: 'Node.js', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'TypeScript', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Express', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Next.js', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'SQL', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'REST API', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'SOAP API', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Scrum', requirementLevel: 'required' }),
+        expect.objectContaining({ technology: 'Python', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'Docker', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'Kubernetes', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'Elastic Stack', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'Postman', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'Git', requirementLevel: 'preferred' }),
+        expect.objectContaining({ technology: 'UML', requirementLevel: 'preferred' }),
+      ]),
+    );
+  });
 });
